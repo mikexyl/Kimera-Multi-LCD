@@ -21,6 +21,7 @@ find_package(Boost REQUIRED
 
 find_package(GTSAM REQUIRED)
 find_package(opengv REQUIRED)
+find_package(OpenCV REQUIRED)
 find_package(DBoW2 REQUIRED)
 if(NOT TARGET DBoW2::DBoW2)
   add_library(DBoW2::DBoW2 INTERFACE IMPORTED)
@@ -66,6 +67,15 @@ target_link_libraries(${PROJECT_NAME}
   tbb
   glog
   nlohmann_json::nlohmann_json
+)
+
+target_include_directories(${PROJECT_NAME}
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+  PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${OpenCV_INCLUDE_DIRS}
 )
 
 include(cmake/vocab_download.cmake)

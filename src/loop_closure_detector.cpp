@@ -43,8 +43,8 @@ void LoopClosureDetector::loadAndInitialize(const LcdParams& params) {
   lcd_tp_wrapper_ = std::unique_ptr<LcdThirdPartyWrapper>(
       new LcdThirdPartyWrapper(params.lcd_tp_params_));
 
-  // Initiate orb matcher
-  orb_feature_matcher_ = cv::DescriptorMatcher::create(3);
+  // Initiate orb matcher:qa
+  orb_feature_matcher_ = cv::DescriptorMatcher::create(cv::DescriptorMatcher::BRUTEFORCE_L1);
 
   // Initialize bag-of-word database
   vocab_.load(params.vocab_path_);
