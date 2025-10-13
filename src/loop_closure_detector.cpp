@@ -44,7 +44,8 @@ void LoopClosureDetector::loadAndInitialize(const LcdParams& params) {
       new LcdThirdPartyWrapper(params.lcd_tp_params_));
 
   // Initiate orb matcher:qa
-  orb_feature_matcher_ = cv::DescriptorMatcher::create(cv::DescriptorMatcher::BRUTEFORCE_L1);
+  orb_feature_matcher_ =
+      cv::DescriptorMatcher::create(cv::DescriptorMatcher::BRUTEFORCE_L1);
 
   // Initialize bag-of-word database
   vocab_.load(params.vocab_path_);
@@ -136,7 +137,9 @@ void LoopClosureDetector::addBowVector(const RobotPoseId& id,
     bow_vectors_[robot_id] = PoseBowVector();
     db_EntryId_to_PoseId_[robot_id] = std::unordered_map<DBoW2::EntryId, PoseId>();
     bow_latest_pose_id_[robot_id] = pose_id;
-    ROS_INFO("Initialized BoW for robot %lu.", robot_id);
+    RCLCPP_INFO(rclcpp::get_logger("LoopClosureDetector"),
+                "Initialized BoW for robot %lu.",
+                robot_id);
   }
   // Add Bow vector to the robot's database
   DBoW2::EntryId entry_id = db_BoW_[robot_id]->add(bow_vector);
@@ -174,9 +177,10 @@ bool LoopClosureDetector::detectLoopWithRobot(size_t robot,
 
   DBoW2::BowVector bow_vec_prev;
   if (!findPreviousBoWVector(vertex_query, 5, &bow_vec_prev)) {
-    ROS_WARN("Cannot find previous BoW for query vertex (%lu,%lu).",
-             robot_query,
-             pose_query);
+    RCLCPP_WARN(rclcpp::get_logger("LoopClosureDetector"),
+                "Cannot find previous BoW for query vertex (%lu,%lu).",
+                robot_query,
+                pose_query);
     return false;
   }
   // Compute nss factor with the previous keyframe of the query robot
@@ -292,7 +296,9 @@ void LoopClosureDetector::computeMatchedIndices(
     orb_feature_matcher_->knnMatch(
         frame_query.descriptors_mat_, frame_match.descriptors_mat_, matches, 2u);
   } catch (cv::Exception& e) {
-    ROS_ERROR("Failed KnnMatch in ComputeMatchedIndices. ");
+    RCLCPP_ERROR(rclcpp::get_logger("LoopClosureDetector"),
+                 "cv::Exception caught during knnMatch.");
+    return;
   }
 
   const size_t& n_matches = matches.size();

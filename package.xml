@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<package format="2">
+<package format="3">
   <name>kimera_multi_lcd</name>
   <version>1.0.0</version>
   <description>Kimera-Multi-LCD</description>
@@ -8,16 +8,14 @@
 
   <license>BSD</license>
 
-  <buildtool_depend>catkin</buildtool_depend>
-  <buildtool_depend>catkin_simple</buildtool_depend>
+  <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <depend>DBoW2</depend>
-  <depend>dbow2_catkin</depend>
+  <depend>dbow2</depend>
   <depend>gtsam</depend>
-  <depend>Eigen</depend>
+  <depend>eigen3_cmake_module</depend>
   <depend>OpenCV</depend>
   <depend>opengv</depend>
-  <depend>roscpp</depend>
+  <depend>rclcpp</depend>
   <depend>std_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
@@ -25,10 +23,17 @@
   <depend>image_transport</depend>
   <depend>pose_graph_tools_msgs</depend>
   <depend>pcl_ros</depend>
-  <depend>rosbag</depend>
+  <depend>rosbag2_cpp</depend>
   <depend>cv_bridge</depend>
-  <depend>tf</depend>
-  <depend>rosunit</depend>
-  <depend>rostest</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
 
 </package>

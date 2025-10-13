@@ -3,10 +3,13 @@
  *
  * Authors: Yun Chang (yunchang@mit.edu)
  */
-#include <cv_bridge/cv_bridge.h>
-#include <sensor_msgs/image_encodings.h>
-
 #include "kimera_multi_lcd/types.h"
+#include <pcl/point_cloud.h>
+#include <pcl_conversions/pcl_conversions.h>
+
+#include <cv_bridge/cv_bridge.hpp>
+#include <sensor_msgs/image_encodings.hpp>
+#include <sensor_msgs/msg/image.hpp>
 
 namespace kimera_multi_lcd {
 
@@ -26,15 +29,15 @@ VLCFrame::VLCFrame(const RobotId& robot_id,
   initializeDescriptorsVector();
 }
 
-VLCFrame::VLCFrame(const pose_graph_tools_msgs::VLCFrameMsg& msg)
+VLCFrame::VLCFrame(const pose_graph_tools_msgs::msg::VLCFrameMsg& msg)
     : robot_id_(msg.robot_id), pose_id_(msg.pose_id), submap_id_(msg.submap_id) {
-  T_submap_pose_ = gtsam::Pose3(gtsam::Rot3(msg.T_submap_pose.orientation.w,
-                                            msg.T_submap_pose.orientation.x,
-                                            msg.T_submap_pose.orientation.y,
-                                            msg.T_submap_pose.orientation.z),
-                                gtsam::Point3(msg.T_submap_pose.position.x,
-                                              msg.T_submap_pose.position.y,
-                                              msg.T_submap_pose.position.z));
+  T_submap_pose_ = gtsam::Pose3(gtsam::Rot3(msg.submap_from_pose.orientation.w,
+                                            msg.submap_from_pose.orientation.x,
+                                            msg.submap_from_pose.orientation.y,
+                                            msg.submap_from_pose.orientation.z),
+                                gtsam::Point3(msg.submap_from_pose.position.x,
+                                              msg.submap_from_pose.position.y,
+                                              msg.submap_from_pose.position.z));
 
   // Convert versors and 3D keypoints
   if (!msg.versors.data.empty()) {
@@ -56,29 +59,30 @@ VLCFrame::VLCFrame(const pose_graph_tools_msgs::VLCFrameMsg& msg)
       }
     }
   } else {
-    ROS_WARN("[VLCFrame] Empty versors!");
+    RCLCPP_WARN(rclcpp::get_logger("kimera_multi_lcd"), "[VLCFrame] Empty versors!");
   }
 
   // Convert descriptors
   try {
-    sensor_msgs::ImageConstPtr ros_image_ptr(
-        new sensor_msgs::Image(msg.descriptors_mat));
+    sensor_msgs::msg::Image::ConstSharedPtr ros_image_ptr(
+        new sensor_msgs::msg::Image(msg.descriptors_mat));
     descriptors_mat_ =
         cv_bridge::toCvCopy(ros_image_ptr, sensor_msgs::image_encodings::TYPE_8UC1)
             ->image;
     initializeDescriptorsVector();
   } catch (...) {
-    ROS_WARN("[VLCFrame] Failed to read descriptors!");
+    RCLCPP_WARN(rclcpp::get_logger("kimera_multi_lcd"),
+                "[VLCFrame] Failed to read descriptors!");
   }
 }
 
-void VLCFrame::toROSMessage(pose_graph_tools_msgs::VLCFrameMsg* msg) const {
+void VLCFrame::toROSMessage(pose_graph_tools_msgs::msg::VLCFrameMsg* msg) const {
   msg->robot_id = robot_id_;
   msg->pose_id = pose_id_;
 
   // Convert submap info
   msg->submap_id = submap_id_;
-  geometry_msgs::Pose pose;
+  geometry_msgs::msg::Pose pose;
   const gtsam::Point3& position = T_submap_pose_.translation();
   const gtsam::Quaternion& orientation = T_submap_pose_.rotation().toQuaternion();
   pose.position.x = position.x();
@@ -88,7 +92,7 @@ void VLCFrame::toROSMessage(pose_graph_tools_msgs::VLCFrameMsg* msg) const {
   pose.orientation.y = orientation.y();
   pose.orientation.z = orientation.z();
   pose.orientation.w = orientation.w();
-  msg->T_submap_pose = pose;
+  msg->submap_from_pose = pose;
 
   // Convert keypoints
   pcl::PointCloud<pcl::PointXYZ> versors;
@@ -112,8 +116,7 @@ void VLCFrame::toROSMessage(pose_graph_tools_msgs::VLCFrameMsg* msg) const {
   pcl::toROSMsg(versors, msg->versors);
 
   // Convert descriptors
-  assert(descriptors_mat_.type() ==
-         CV_8UC1);  // check that the matrix is of type CV_8U
+  assert(descriptors_mat_.type() == CV_8UC1);  // check that the matrix is of type CV_8U
   cv_bridge::CvImage cv_img;
   // cv_img.header   = in_msg->header; // Yulun: need to set header explicitly?
   cv_img.encoding = sensor_msgs::image_encodings::TYPE_8UC1;
