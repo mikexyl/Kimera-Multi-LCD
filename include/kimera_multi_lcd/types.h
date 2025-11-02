@@ -12,7 +12,7 @@
 #include <pcl/point_types.h>
 #include <pcl_ros/point_cloud.h>
 #include <pose_graph_tools_msgs/VLCFrameMsg.h>
-#include <opencv2/opencv.hpp>
+
 #include <opencv2/features2d.hpp>
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/opencv.hpp>
@@ -27,7 +27,6 @@ typedef size_t PoseId;
 typedef std::pair<RobotId, PoseId> RobotPoseId;
 typedef std::set<RobotPoseId> RobotPoseIdSet;
 typedef std::vector<RobotPoseId> RobotPoseIdVector;
-typedef std::map<PoseId, DBoW2::BowVector> PoseBowVector;
 
 // Each edge in the pose graph is uniquely identified by four integers
 // (robot_src, frame_src, robot_dst, frame_dst)
@@ -208,6 +207,22 @@ struct LcdParams {
   double ransac_threshold_;
   double geometric_verification_min_inlier_count_;
   double geometric_verification_min_inlier_percentage_;
+
+  // lighterglue parameters
+  int lcd_lg_num_features_ = 500;  // num features to track
+  std::string lcd_lg_model_path_{};
+  std::string lcd_faiss_index_path_{};
+  std::string xfeat_nv_head_model_path_{};
+  std::string netvlad_model_path_{};
+  int lcd_min_matched_features_ = 5;
+
+  int local_window_size_ = 50;  // number of most recent keyframes to skip when
+  // detecting loops
+
+  double min_lmk_obs_ratio_ = 0.25;
+  double min_lmk_obs_cnt_ = 4;
+  float min_lmk_parallax_ = 20;
+  float max_lmk_reproj_error = 36;
 
   bool equals(const LcdParams& other) const {
     return (vocab_path_ == other.vocab_path_ &&

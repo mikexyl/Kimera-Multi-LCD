@@ -16,15 +16,19 @@
 namespace kimera_multi_lcd {
 
 // Save BoW vectors
-void saveBowVectors(const std::map<PoseId, pose_graph_tools_msgs::BowVector>& bow_vectors,
-                    const std::string& filename);
+void saveBowVectors(
+    const std::map<PoseId, pose_graph_tools_msgs::BowVector>& bow_vectors,
+    const std::string& filename);
 
 void saveBowVectors(const std::map<PoseId, DBoW2::BowVector>& bow_vectors,
                     const std::string& filename);
 
+void saveGlobalDescMat(const std::map<PoseId, cv::Mat>& global_descs,
+                       const std::string& filename);
 // Save VLC Frames
-void saveVLCFrames(const std::map<PoseId, pose_graph_tools_msgs::VLCFrameMsg>& vlc_frames,
-                   const std::string& filename);
+void saveVLCFrames(
+    const std::map<PoseId, pose_graph_tools_msgs::VLCFrameMsg>& vlc_frames,
+    const std::string& filename);
 
 void saveVLCFrames(const std::map<PoseId, VLCFrame>& vlc_frames,
                    const std::string& filename);
@@ -35,6 +39,9 @@ void loadBowVectors(const std::string& filename,
 
 void loadBowVectors(const std::string& filename,
                     std::map<PoseId, DBoW2::BowVector>& bow_vectors);
+
+void loadGlobalDesc(const std::string& filename,
+                    std::map<PoseId, cv::Mat>& global_descs);
 
 // Save VLC Frames
 void loadVLCFrames(const std::string& filename,

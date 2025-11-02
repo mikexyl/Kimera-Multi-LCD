@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 project(kimera_multi_lcd)
 
 add_compile_options(-Wall -Wextra)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -22,6 +22,7 @@ find_package(Boost REQUIRED
 find_package(GTSAM REQUIRED)
 find_package(opengv REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(xfeat-cpp REQUIRED)
 find_package(DBoW2 REQUIRED)
 if(NOT TARGET DBoW2::DBoW2)
   add_library(DBoW2::DBoW2 INTERFACE IMPORTED)
@@ -67,6 +68,7 @@ target_link_libraries(${PROJECT_NAME}
   tbb
   glog
   nlohmann_json::nlohmann_json
+  xfeat-cpp::xfeat-cpp
 )
 
 target_include_directories(${PROJECT_NAME}

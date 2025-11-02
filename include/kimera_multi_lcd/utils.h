@@ -19,10 +19,13 @@
 #include "kimera_multi_lcd/types.h"
 
 namespace kimera_multi_lcd {
-void BowVectorToMsg(const DBoW2::BowVector& bow_vec, pose_graph_tools_msgs::BowVector* msg);
-
+void BowVectorToMsg(const DBoW2::BowVector& bow_vec,
+                    pose_graph_tools_msgs::BowVector* msg);
 void BowVectorFromMsg(const pose_graph_tools_msgs::BowVector& msg,
                       DBoW2::BowVector* bow_vec);
+
+void MatToBowVectorMsg(const cv::Mat& mat, pose_graph_tools_msgs::BowVector* msg);
+void MatFromBowVectorMsg(const pose_graph_tools_msgs::BowVector& msg, cv::Mat* mat);
 
 void VLCFrameToMsg(const VLCFrame& frame, pose_graph_tools_msgs::VLCFrameMsg* msg);
 void VLCFrameFromMsg(const pose_graph_tools_msgs::VLCFrameMsg& msg, VLCFrame* frame);

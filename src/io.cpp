@@ -15,8 +15,9 @@ namespace kimera_multi_lcd {
 
 using nlohmann::json;
 
-void saveBowVectors(const std::map<PoseId, pose_graph_tools_msgs::BowVector>& bow_vectors,
-                    const std::string& filename) {
+void saveBowVectors(
+    const std::map<PoseId, pose_graph_tools_msgs::BowVector>& bow_vectors,
+    const std::string& filename) {
   std::ofstream outfile(filename);
   json record;
   record["ids"] = json::array();
@@ -38,8 +39,19 @@ void saveBowVectors(const std::map<PoseId, DBoW2::BowVector>& bow_vectors,
   saveBowVectors(pg_bow_vectors, filename);
 }
 
-void saveVLCFrames(const std::map<PoseId, pose_graph_tools_msgs::VLCFrameMsg>& vlc_frames,
-                   const std::string& filename) {
+void saveGlobalDescMat(const std::map<PoseId, cv::Mat>& global_descs,
+                       const std::string& filename) {
+  std::map<PoseId, pose_graph_tools_msgs::BowVector> pg_global_descs;
+  for (const auto& id_desc : global_descs) {
+    pg_global_descs[id_desc.first] = pose_graph_tools_msgs::BowVector();
+    MatToBowVectorMsg(id_desc.second, &pg_global_descs[id_desc.first]);
+  }
+  saveBowVectors(pg_global_descs, filename);
+}
+
+void saveVLCFrames(
+    const std::map<PoseId, pose_graph_tools_msgs::VLCFrameMsg>& vlc_frames,
+    const std::string& filename) {
   std::ofstream outfile(filename);
   json record;
   record["ids"] = json::array();
@@ -86,6 +98,17 @@ void loadBowVectors(const std::string& filename,
   for (const auto& id_bow : pg_bow_vectors) {
     bow_vectors[id_bow.first] = DBoW2::BowVector();
     BowVectorFromMsg(id_bow.second, &bow_vectors[id_bow.first]);
+  }
+}
+
+void loadGlobalDesc(const std::string& filename,
+                    std::map<PoseId, cv::Mat>& global_descs) {
+  std::map<PoseId, pose_graph_tools_msgs::BowVector> pg_global_descs;
+  loadBowVectors(filename, pg_global_descs);
+
+  for (const auto& id_desc : pg_global_descs) {
+    global_descs[id_desc.first] = cv::Mat();
+    MatFromBowVectorMsg(id_desc.second, &global_descs[id_desc.first]);
   }
 }
 

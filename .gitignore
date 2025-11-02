@@ -1,3 +1,6 @@
 .vscode
 *.tex
 vocab/
+
+compile_commands.json
+.cache

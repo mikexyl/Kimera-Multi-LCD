@@ -30,5 +30,6 @@
   <depend>tf</depend>
   <depend>rosunit</depend>
   <depend>rostest</depend>
+  <depend>xfeat-cpp</depend>
 
 </package>

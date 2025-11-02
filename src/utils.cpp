@@ -10,12 +10,21 @@
 
 namespace kimera_multi_lcd {
 
-void BowVectorToMsg(const DBoW2::BowVector& bow_vec, pose_graph_tools_msgs::BowVector* msg) {
+void BowVectorToMsg(const DBoW2::BowVector& bow_vec,
+                    pose_graph_tools_msgs::BowVector* msg) {
   msg->word_ids.clear();
   msg->word_values.clear();
   for (auto it = bow_vec.begin(); it != bow_vec.end(); ++it) {
     msg->word_ids.push_back(it->first);
     msg->word_values.push_back(it->second);
+  }
+}
+
+void MatToBowVectorMsg(const cv::Mat& mat, pose_graph_tools_msgs::BowVector* msg) {
+  msg->word_ids.clear();
+  msg->word_values.clear();
+  for (int i = 0; i < mat.cols; ++i) {
+    msg->word_values.push_back(mat.at<float>(0, i));
   }
 }
 
@@ -25,6 +34,13 @@ void BowVectorFromMsg(const pose_graph_tools_msgs::BowVector& msg,
   bow_vec->clear();
   for (size_t i = 0; i < msg.word_ids.size(); ++i) {
     bow_vec->addWeight(msg.word_ids[i], msg.word_values[i]);
+  }
+}
+
+void MatFromBowVectorMsg(const pose_graph_tools_msgs::BowVector& msg, cv::Mat* mat) {
+  mat->create(1, msg.word_values.size(), CV_32F);
+  for (size_t i = 0; i < msg.word_values.size(); ++i) {
+    (*mat).at<float>(0, i) = static_cast<float>(msg.word_values[i]);
   }
 }
 
