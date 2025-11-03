@@ -1,75 +1,74 @@
-#include "kimera-vio/loopclosure/VLADLoopClosureDetector.h"
+#include <glog/logging.h>
 
-namespace VIO {
-class VLADLoopClosureDetector;
+#include "kimera_multi_lcd/vlad_loop_closure_detector.h"
+
+namespace kimera_multi_lcd {
 
 DEFINE_double(max_nss_vlad_distance,
               0.06,
               "Maximum NSS distance for VLAD loop closure detection.");
 
-void VLADLoopClosureDetector::detectLoop(const FrameId& frame_id,
-                                         const Database::GlobalDesc& bow_vec,
-                                         LoopResult* result,
-                                         FrameId* query_frame,
-                                         FrameIdSet* global_candidates) {
-  CHECK_NOTNULL(result);
+bool VLADLoopClosureDetector::detectLoopWithRobot(
+    size_t robot,
+    const RobotPoseId& vertex_query,
+    const VLADLoopClosureDetector::GlobalDesc& bow_vec,
+    std::vector<RobotPoseId>* vertex_matches,
+    std::vector<double>* scores) {
   auto query_frame_outside_local_window =
-      this->findFirstFrameIdOutsideLocalWindow(frame_id);
-  if (query_frame_outside_local_window) {
-    this->detectLoopOutsideLocalWindow(*query_frame_outside_local_window,
-                                       bow_vec,
-                                       result,
-                                       query_frame,
-                                       global_candidates);
+      this->findFirstRobotPoseIdOutsideLocalWindow(vertex_query);
+  if (query_frame_outside_local_window and
+      this->detectLoopOutsideLocalWindow(
+          robot, *query_frame_outside_local_window, bow_vec, vertex_matches, scores)) {
+    return true;
   } else {
-    if (query_frame) {
-      *query_frame = 0;
+    // empty return
+    vertex_matches->clear();
+    if (scores) {
+      scores->clear();
     }
-    if (global_candidates) {
-      global_candidates->clear();
-    }
+    return false;
   }
 }
 
-void VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
-    const FrameId& frame_id,
-    const Database::GlobalDesc&,  // not used, leave it here for compatibility
-    LoopResult* result,
-    FrameId* query_frame,
-    FrameIdSet* global_candidates) {
-  CHECK_NOTNULL(result);
-  CHECK_NOTNULL(db_);
-  result->query_id_ = {frame_id};
-  if (query_frame) {
-    *query_frame = frame_id;
-  }
+bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
+    size_t robot,
+    const RobotPoseId& robot_pose_id,
+    const Database::GlobalDesc&
+        global_desc,  // not used, leave it here for compatibility
+    std::vector<RobotPoseId>* vertex_matches,
+    std::vector<double>* scores) {
+  CHECK_NOTNULL(vertex_matches);
+  CHECK(db_.find(robot_pose_id.first) != db_.end())
+      << "VLADLoopClosureDetector: Robot " << robot_pose_id.first
+      << " not found in database.";
 
-  cv::Mat global_desc = db_->get(frame_id);
-  CHECK(!global_desc.empty())
-      << "VLADLoopClosureDetector: Global descriptor for frame " << frame_id
-      << " is empty.";
+  RobotId robot_query = robot_pose_id.first;
+  PoseId pose_query = robot_pose_id.second;
+  auto robot_db = db_.at(robot).get();
 
-  if (frame_id < static_cast<FrameId>(lcd_params_.recent_frames_window_ +
-                                      lcd_params_.max_db_results_ +
-                                      lcd_params_.local_window_size_)) {
+  CHECK(!global_desc.empty()) << "VLADLoopClosureDetector: Global descriptor for pose "
+                              << robot_query << ":" << pose_query << " is empty.";
+
+  if (pose_query < static_cast<PoseId>(lcd_params_.local_window_size_ +
+                                       lcd_params_.max_db_results_)) {
     VLOG(1) << "VLADLoopClosureDetector: Not enough frames processed yet. "
             << "Skipping loop closure detection.";
-    result->status_ = LCDStatus::NO_MATCHES;
-    return;
+    return false;
   }
 
-  int max_possible_match_id = frame_id - lcd_params_.recent_frames_window_;
+  int max_possible_match_id =
+      pose_query - lcd_params_.local_window_size_ - lcd_params_.max_db_results_;
   if (max_possible_match_id < 0) {
     max_possible_match_id = 0;
   }
 
-  int top_k = lcd_params_.max_db_results_ + lcd_params_.recent_frames_window_;
+  int top_k = lcd_params_.max_db_results_ + lcd_params_.local_window_size_;
 
   Database::Database::QueryResults query_result(top_k, -1);
-  Database::Database::QueryDistances query_distance(
-      top_k, std::numeric_limits<float>::max());
+  Database::Database::QueryDistances query_distance(top_k,
+                                                    std::numeric_limits<float>::max());
 
-  db_->search(global_desc, top_k, query_result, query_distance);
+  robot_db->search(global_desc, top_k, query_result, query_distance);
 
   // remove -1 from query_result
   for (size_t i = 0; i < query_result.size(); ++i) {
@@ -100,38 +99,39 @@ void VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
 
   if (query_result.empty()) {
     VLOG(1) << "VLADLoopClosureDetector: No matches found.";
-    result->status_ = LCDStatus::NO_MATCHES;
-    return;
+    return false;
   }
 
-  auto prev_global_vec = db_->get(frame_id - 1);
-  CHECK(!prev_global_vec.empty())
-      << "VLADLoopClosureDetector: Previous global descriptor for frame "
-      << (frame_id - 1) << " is empty.";
+  GlobalDesc prev_global_desc;
+  bool found_prev_global_desc =
+      findPreviousGlobalDesc(robot_pose_id, 5, &prev_global_desc);
+  CHECK(found_prev_global_desc and not prev_global_desc.empty())
+      << "VLADLoopClosureDetector: Previous global descriptor for frame " << robot_query
+      << ":" << (pose_query - 1) << " is empty.";
 
   double nss_distance = 0.0;
-  if (lcd_params_.use_nss_) {
-    nss_distance = db_->distance(global_desc, prev_global_vec);
+  if (FLAGS_max_nss_vlad_distance > 0.0) {
+    nss_distance = robot_db->distance(global_desc, prev_global_desc);
   } else {
-    LOG_IF(ERROR, !lcd_params_.use_nss_)
+    LOG_IF(ERROR, FLAGS_max_nss_vlad_distance < 0.0)
         << "Setting use_nss as false is deprecated.";
   }
 
-  if (lcd_params_.use_nss_ && nss_distance > FLAGS_max_nss_vlad_distance) {
+  if (FLAGS_max_nss_vlad_distance > 0.0 && nss_distance > FLAGS_max_nss_vlad_distance) {
     VLOG(1) << "VLADLoopClosureDetector: NSS distance " << nss_distance
             << " exceeds threshold " << FLAGS_max_nss_vlad_distance
             << ". No loop closure.";
-    result->status_ = LCDStatus::LOW_NSS_FACTOR;
-    return;
+    return false;
   }
+
+  static constexpr double kL2DistanceToScoreFactor = 10.0;
+  float nss_factor = std::exp(-kL2DistanceToScoreFactor * nss_distance);
 
   auto faiss_to_dbow_queryresults =
       [&](Database::Database::QueryResults& query_result,
-          Database::Database::QueryDistances& query_distance)
-      -> DBoW2::QueryResults {
+          Database::Database::QueryDistances& query_distance) -> DBoW2::QueryResults {
     DBoW2::QueryResults dbow_query_result;
     for (size_t i = 0; i < query_result.size(); ++i) {
-      static constexpr double kL2DistanceToScoreFactor = 10.0;
       float score = std::exp(-kL2DistanceToScoreFactor * query_distance[i]);
       DBoW2::Result result;
       result.Id = query_result[i];
@@ -150,119 +150,49 @@ void VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
     }
   }
 
-  auto dbow_query_result =
-      faiss_to_dbow_queryresults(query_result, query_distance);
+  auto dbow_query_result = faiss_to_dbow_queryresults(query_result, query_distance);
 
-  // Begin grouping and checking matches.
-  if (query_result.empty()) {
-    result->status_ = LCDStatus::LOW_SCORE;
-    return;
-  }
+  if (!dbow_query_result.empty()) {
+    DBoW2::Result best_result = dbow_query_result[0];
+    double normalized_score = best_result.Score / nss_factor;
+    const PoseId best_match_pose_id = db_EntryId_to_PoseId_[robot][best_result.Id];
+    if (robot != robot_query) {
+      vertex_matches->push_back(std::make_pair(robot, best_match_pose_id));
+      if (scores) scores->push_back(normalized_score);
+    } else {
+      // Check dist_local param
+      int pose_query_int = (int)pose_query;
+      int pose_match_int = (int)best_match_pose_id;
+      if (std::abs(pose_query_int - pose_match_int) < params_.dist_local_) return false;
+      // Compute islands in the matches.
+      // An island is a group of matches with close frame_ids.
+      std::vector<MatchIsland> islands;
+      lcd_tp_wrapper_->computeIslands(&dbow_query_result, &islands);
+      if (!islands.empty()) {
+        // Check for temporal constraint if it is an single robot lc
+        // Find the best island grouping using MatchIsland sorting.
+        const MatchIsland& best_island =
+            *std::max_element(islands.begin(), islands.end());
 
-  // Set best candidate to the lowest label index
-  result->match_id_ = {static_cast<unsigned long>(query_result[0])};
-  if (global_candidates) {
-    global_candidates->clear();
-    for (const auto& id : query_result) {
-      global_candidates->insert(static_cast<FrameId>(id));
+        // Run temporal constraint check on this best island.
+        bool pass_temporal_constraint =
+            lcd_tp_wrapper_->checkTemporalConstraint(pose_query, best_island);
+        if (pass_temporal_constraint) {
+          vertex_matches->push_back(std::make_pair(robot, best_match_pose_id));
+          if (scores) scores->push_back(normalized_score);
+        }
+      }
     }
   }
 
-  // Compute islands in the matches.
-  // An island is a group of matches with close frame_ids.
-  std::vector<MatchIsland> islands;
-  lcd_tp_wrapper_->computeIslands(&dbow_query_result, &islands);
+  if (scores) CHECK_EQ(vertex_matches->size(), scores->size());
 
-  if (islands.empty()) {
-    VLOG(1) << "VLADLoopClosureDetector: No islands found in matches.";
-    result->status_ = LCDStatus::NO_GROUPS;
-    return;
+  if (!vertex_matches->empty()) {
+    total_global_desc_matches_ += vertex_matches->size();
+    return true;
   }
 
-  // Find the best island grouping using MatchIsland sorting.
-  const MatchIsland& best_island =
-      *std::max_element(islands.begin(), islands.end());
-
-  // Run temporal constraint check on this best island.
-  bool pass_temporal_constraint =
-      lcd_tp_wrapper_->checkTemporalConstraint(frame_id, best_island);
-
-  if (!pass_temporal_constraint) {
-    VLOG(1) << "VLADLoopClosureDetector: Failed temporal constraint check.";
-    result->status_ = LCDStatus::FAILED_TEMPORAL_CONSTRAINT;
-    return;
-  }
-
-  verifyAndRecoverPose(result);
-  if (result->status_ != LCDStatus::LOOP_DETECTED) {
-    VLOG(1) << "VLADLoopClosureDetector: Failed pose verification or recovery.";
-  }
+  return false;
 }
 
-void VLADLoopClosureDetector::getNewFeaturesAndDescriptors(
-    const Frame& frame,
-    std::vector<cv::KeyPoint>* keypoints,
-    typename Database::Desc* descriptors_mat) {
-  CHECK_NOTNULL(keypoints);
-  CHECK_NOTNULL(descriptors_mat);
-
-  for (auto const& keypoint : frame.keypoints_) {
-    keypoints->push_back(cv::KeyPoint(
-        keypoint.x, keypoint.y, 0.0f));  // size is not used in VLAD
-  }
-
-  *descriptors_mat = frame.descriptors_;
-}
-
-void VLADLoopClosureDetector::descriptorMatToVec(
-    const Frame& frame,
-    const typename Database::DescMat& descriptors_mat,
-    typename Database::DescVector* descriptors_vec) {
-  CHECK(not frame.xfeat_M1_.empty());
-  CHECK(not frame.xfeat_x_prep_.empty());
-
-  CHECK_NOTNULL(descriptors_vec);
-  descriptors_vec->clear();
-  descriptors_vec->push_back(frame.xfeat_M1_);
-  descriptors_vec->push_back(frame.xfeat_x_prep_);
-}
-
-LCDFrame::Ptr VLADLoopClosureDetector::processMonoPnP(
-    const Frame& frame,
-    const PointsWithIdMap& W_points_with_ids,
-    const gtsam::Pose3& W_Pose_Blkf) {
-  size_t nr_kpts = frame.keypoints_.size();
-  CHECK_EQ(frame.landmarks_.size(), nr_kpts);
-  CHECK_EQ(frame.versors_.size(), nr_kpts);
-  CHECK_EQ(frame.keypoints_undistorted_.size(), nr_kpts);
-
-  auto keypoints = frame.keypoints_;
-
-  BearingVectors undistorted_bearing_vectors;
-  for (const auto& pt : keypoints) {
-    undistorted_bearing_vectors.push_back(
-        UndistorterRectifier::GetBearingVector(pt, frame.cam_param_));
-  }
-
-  std::vector<cv::KeyPoint> keypoints_to_save;
-  for (const auto& pt : keypoints) {
-    keypoints_to_save.push_back(cv::KeyPoint(pt.x, pt.y, 0.0f));
-  }
-
-  auto lcd_frame = std::make_shared<LCDFrame>(
-      frame.timestamp_,
-      FrameCache::NEW_ID,
-      frame.id_,
-      keypoints_to_save,
-      Landmarks(),
-      std::vector<cv::Mat>{frame.xfeat_M1_, frame.xfeat_x_prep_},
-      frame.descriptors_,
-      undistorted_bearing_vectors,
-      W_Pose_Blkf);
-  lcd_frame->landmark_ids = frame.landmarks_;
-  lcd_frame->cam_params_ = frame.cam_param_;
-
-  return lcd_frame;
-}
-
-}  // namespace VIO
+}  // namespace kimera_multi_lcd

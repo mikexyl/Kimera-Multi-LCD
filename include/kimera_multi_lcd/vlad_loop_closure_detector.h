@@ -38,13 +38,11 @@ struct XfeatNVWrapper : xfeat::XfeatNetVLADONNX {
     global_desc = Base::transform(M1, x_prep);
   }
 
-  void add(const GlobalDesc& global_desc) {
+  auto add(const GlobalDesc& global_desc) {
     CHECK_NOTNULL(db_);
     CHECK(not global_desc.empty());
-    faiss::idx_t id = id_to_desc_map_.size();
-    id_to_desc_map_.emplace(id, global_desc.clone());
     try {
-      db_->add(global_desc);
+      return db_->add(global_desc);
     } catch (const std::exception& e) {
       LOG(ERROR) << "Failed to add to database: " << e.what();
       throw;
@@ -72,17 +70,10 @@ struct XfeatNVWrapper : xfeat::XfeatNetVLADONNX {
     }
   }
 
-  GlobalDesc get(const faiss::idx_t id) const {
-    if (id_to_desc_map_.count(id)) {
-      return id_to_desc_map_.at(id);
-    } else {
-      return GlobalDesc();  // Return an empty cv::Mat if id not found
-    }
-  }
+  // GlobalDesc get(const size_t id) const { return db_->get(id); }
 
  private:
   std::unique_ptr<Database> db_;
-  std::map<faiss::idx_t, cv::Mat> id_to_desc_map_;
 };
 
 // dummy feature detector that does nothing
@@ -90,14 +81,13 @@ class DummyFeatureDetector : cv::FeatureDetector {
  public:
   DummyFeatureDetector() = default;
 
-  CV_WRAP void compute(cv::InputArray image,
-                       CV_OUT CV_IN_OUT std::vector<cv::KeyPoint>& keypoints,
-                       cv::OutputArray descriptors) final {}
+  CV_WRAP void compute(cv::InputArray,
+                       CV_OUT CV_IN_OUT std::vector<cv::KeyPoint>&,
+                       cv::OutputArray) final {}
 
-  CV_WRAP void compute(cv::InputArrayOfArrays images,
-                       CV_OUT CV_IN_OUT
-                           std::vector<std::vector<cv::KeyPoint> >& keypoints,
-                       cv::OutputArrayOfArrays descriptors) final {}
+  CV_WRAP void compute(cv::InputArrayOfArrays,
+                       CV_OUT CV_IN_OUT std::vector<std::vector<cv::KeyPoint> >&,
+                       cv::OutputArrayOfArrays) final {}
 };
 
 class VLADLoopClosureDetector : public LoopClosureDetector<XfeatNVWrapper,
@@ -113,7 +103,16 @@ class VLADLoopClosureDetector : public LoopClosureDetector<XfeatNVWrapper,
   template <typename... Args>
   VLADLoopClosureDetector(Args&&... args)
       : BaseDetector(std::forward<Args>(args)...),
-        env_(Ort::Env(ORT_LOGGING_LEVEL_WARNING, "kimera_multi_lcd")) {
+        env_(Ort::Env(ORT_LOGGING_LEVEL_WARNING, "kimera_multi_lcd")) {}
+
+  /* ------------------------------------------------------------------------
+   */
+  virtual ~VLADLoopClosureDetector() = default;
+
+  void loadAndInitialize(const LcdParams& params) override {
+    LoopClosureDetectorBase::loadAndInitialize(params);
+    LOG(INFO) << "load lg from: " << lcd_params_.lcd_lg_model_path_;
+    LOG(INFO) << "load faiss from: " << lcd_params_.lcd_faiss_index_path_;
     feature_matcher_ =
         xfeat::LighterGlueCV::create(env_,
                                      xfeat::LighterGlueCV::Params{
@@ -122,11 +121,8 @@ class VLADLoopClosureDetector : public LoopClosureDetector<XfeatNVWrapper,
                                          .min_score = -1,
                                          .n_kpts = lcd_params_.lcd_lg_num_features_,
                                      });
+    LOG(INFO) << "VLADLoopClosureDetector initialized.";
   }
-
-  /* ------------------------------------------------------------------------
-   */
-  virtual ~VLADLoopClosureDetector() = default;
 
   virtual std::unique_ptr<Database> createDatabase() override {
     auto faiss_db = std::make_unique<Database::Database>(
@@ -142,28 +138,40 @@ class VLADLoopClosureDetector : public LoopClosureDetector<XfeatNVWrapper,
   // override that matches the instantiated signature (RobotPoseId, cv::Mat).
   void addGlobalDesc(const RobotPoseId& id,
                      const Database::GlobalDesc& bow_vector) override {
-    // Forward to the base implementation to preserve default behavior.
-    // LoopClosureDetector<XfeatNVWrapper, DummyFeatureDetector, xfeat::LighterGlueCV>::
-    //     addGlobalDesc(id, bow_vector);
-  }
-
-  bool detectLoop(const RobotPoseId& frame_id,
-                  const Database::GlobalDesc& bow_vec,
-                  std::vector<RobotPoseId>* vertex_matches,
-                  std::vector<double>* scores = nullptr) {
-    throw std::runtime_error("Not implemented");
+    const size_t robot_id = id.first;
+    const size_t pose_id = id.second;
+    // Skip if this BoW vector has been added
+    if (globalDescExists(id)) return;
+    if (db_.find(robot_id) == db_.end()) {
+      db_[robot_id] = createDatabase();
+      global_descs_[robot_id] = PoseGlobalDesc();
+      db_EntryId_to_PoseId_[robot_id] = std::unordered_map<size_t, PoseId>();
+      global_desc_latest_pose_id_[robot_id] = pose_id;
+      ROS_INFO("Initialized BoW for robot %lu.", robot_id);
+    }
+    // Add Bow vector to the robot's database
+    faiss::idx_t entry_id_faiss = db_[robot_id]->add(bow_vector);
+    size_t entry_id = static_cast<size_t>(entry_id_faiss);
+    // Save the raw bow vectors
+    global_descs_[robot_id][pose_id] = bow_vector;
+    db_EntryId_to_PoseId_[robot_id][entry_id] = pose_id;
+    // Update latest pose ID with BoW
+    if (pose_id > global_desc_latest_pose_id_[robot_id]) {
+      global_desc_latest_pose_id_[robot_id] = pose_id;
+    }
   }
 
   bool detectLoopWithRobot(size_t robot,
                            const RobotPoseId& vertex_query,
                            const GlobalDesc& bow_vector_query,
                            std::vector<RobotPoseId>* vertex_matches,
-                           std::vector<double>* scores = nullptr) override {}
+                           std::vector<double>* scores = nullptr) override;
 
-  void detectLoopOutsideLocalWindow(const RobotPoseId& frame_id,
+  bool detectLoopOutsideLocalWindow(size_t robot,
+                                    const RobotPoseId& frame_id,
                                     const Database::GlobalDesc& bow_vec,
                                     std::vector<RobotPoseId>* vertex_matches,
-                                    std::vector<double>* scores = nullptr) {}
+                                    std::vector<double>* scores = nullptr);
 
   std::optional<RobotPoseId> findFirstRobotPoseIdOutsideLocalWindow(
       const RobotPoseId& frame_id) const {

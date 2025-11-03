@@ -200,8 +200,7 @@ class LoopClosureDetector : public LoopClosureDetectorBase {
   // Keep track of latest pose Id with BoW for each robot
   std::unordered_map<RobotId, PoseId> global_desc_latest_pose_id_;
   // Map DBoW2 Entry Id to Pose Id
-  std::unordered_map<RobotId, std::unordered_map<DBoW2::EntryId, PoseId>>
-      db_EntryId_to_PoseId_;
+  std::unordered_map<RobotId, std::unordered_map<size_t, PoseId>> db_EntryId_to_PoseId_;
 
   // LCD third party wrapper
   std::unique_ptr<LcdThirdPartyWrapper> lcd_tp_wrapper_;

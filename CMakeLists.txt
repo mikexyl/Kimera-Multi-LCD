@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 project(kimera_multi_lcd)
 
 add_compile_options(-Wall -Wextra)
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -56,6 +56,7 @@ cs_add_library(${PROJECT_NAME}
   src/utils.cpp
   src/serializer.cpp
   src/io.cpp
+  src/VLADLoopClosureDetector.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}

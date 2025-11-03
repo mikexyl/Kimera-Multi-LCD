@@ -16,7 +16,7 @@ class DBoWLoopClosureDetector
     if (db_.find(robot_id) == db_.end()) {
       db_[robot_id] = createDatabase();
       global_descs_[robot_id] = PoseGlobalDesc();
-      db_EntryId_to_PoseId_[robot_id] = std::unordered_map<DBoW2::EntryId, PoseId>();
+      db_EntryId_to_PoseId_[robot_id] = std::unordered_map<size_t, PoseId>();
       global_desc_latest_pose_id_[robot_id] = pose_id;
       ROS_INFO("Initialized BoW for robot %lu.", robot_id);
     }
@@ -49,7 +49,7 @@ class DBoWLoopClosureDetector
                            const RobotPoseId& vertex_query,
                            const GlobalDesc& bow_vector_query,
                            std::vector<RobotPoseId>* vertex_matches,
-                           std::vector<double>* scores) {
+                           std::vector<double>* scores) override {
     assert(NULL != vertex_matches);
     vertex_matches->clear();
     if (scores) scores->clear();
