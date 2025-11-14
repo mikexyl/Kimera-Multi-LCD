@@ -67,14 +67,16 @@ class VLCFrame {
   VLCFrame();
   VLCFrame(const size_t& robot_id,
            const size_t& pose_id,
-           const std::vector<gtsam::Vector3>& keypoints_3d,
+           const std::vector<cv::Point2f>& keypoints,
+           const std::vector<gtsam::Vector3>& landmarks,
            const std::vector<gtsam::Vector3>& versors,
            const OrbDescriptor& descriptors_mat);
   VLCFrame(const pose_graph_tools_msgs::VLCFrameMsg& msg);
   size_t robot_id_;
   size_t pose_id_;
   size_t submap_id_;  // ID of the submap that contains this frame (pose)
-  std::vector<gtsam::Vector3> keypoints_;  // 3D keypoints
+  std::vector<cv::Point2f> keypoints_;     // 2D keypoints
+  std::vector<gtsam::Vector3> landmarks_;  // 3D keypoints
   std::vector<gtsam::Vector3> versors_;    // bearing vector
   OrbDescriptorVec descriptors_vec_;
   OrbDescriptor descriptors_mat_;
@@ -216,7 +218,11 @@ struct LcdParams {
   std::string netvlad_model_path_{};
   int lcd_min_matched_features_ = 5;
 
-  int local_window_size_ = 50;  // number of most recent keyframes to skip when
+  // Spatial dimensions expected by onnx models used in the pipeline
+  int network_input_width_ = 320;
+  int network_input_height_ = 224;
+
+  int local_window_size_ = 10;  // number of most recent keyframes to skip when
   // detecting loops
 
   double min_lmk_obs_ratio_ = 0.25;
@@ -240,7 +246,9 @@ struct LcdParams {
             geometric_verification_min_inlier_count_ ==
                 other.geometric_verification_min_inlier_count_ &&
             geometric_verification_min_inlier_percentage_ ==
-                other.geometric_verification_min_inlier_percentage_);
+                other.geometric_verification_min_inlier_percentage_) &&
+           (network_input_width_ == other.network_input_width_) &&
+           (network_input_height_ == other.network_input_height_);
   }
 
   bool operator==(const LcdParams& other) const { return equals(other); }

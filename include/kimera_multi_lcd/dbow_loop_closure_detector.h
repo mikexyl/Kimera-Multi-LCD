@@ -45,6 +45,14 @@ class DBoWLoopClosureDetector
 
   inline const OrbVocabulary* getVocabulary() const { return &vocab_; }
 
+  void matchFeatures(const std::vector<cv::Point2f>& query_kpts,
+                     const cv::Mat& query_desc,
+                     std::vector<cv::Point2f>& train_kpts,
+                     const cv::Mat& train_desc,
+                     std::vector<DMatchVec>& matches) const override {
+    feature_matcher_->knnMatch(query_desc, train_desc, matches, 2u);
+  }
+
   bool detectLoopWithRobot(size_t robot,
                            const RobotPoseId& vertex_query,
                            const GlobalDesc& bow_vector_query,

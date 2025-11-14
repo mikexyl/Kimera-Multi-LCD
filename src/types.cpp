@@ -3,10 +3,11 @@
  *
  * Authors: Yun Chang (yunchang@mit.edu)
  */
-#include <cv_bridge/cv_bridge.h>
-#include <sensor_msgs/image_encodings.h>
-
 #include "kimera_multi_lcd/types.h"
+
+#include <cv_bridge/cv_bridge.h>
+#include <glog/logging.h>
+#include <sensor_msgs/image_encodings.h>
 
 namespace kimera_multi_lcd {
 
@@ -14,12 +15,14 @@ VLCFrame::VLCFrame() {}
 
 VLCFrame::VLCFrame(const RobotId& robot_id,
                    const PoseId& pose_id,
-                   const std::vector<gtsam::Vector3>& keypoints_3d,
+                   const std::vector<cv::Point2f>& keypoints,
+                   const std::vector<gtsam::Vector3>& landmarks,
                    const std::vector<gtsam::Vector3>& versors,
                    const OrbDescriptor& descriptors_mat)
     : robot_id_(robot_id),
       pose_id_(pose_id),
-      keypoints_(keypoints_3d),
+      keypoints_(keypoints),
+      landmarks_(landmarks),
       versors_(versors),
       descriptors_mat_(descriptors_mat) {
   assert(keypoints_.size() == descriptors_mat_.size().height);
@@ -35,6 +38,14 @@ VLCFrame::VLCFrame(const pose_graph_tools_msgs::VLCFrameMsg& msg)
                                 gtsam::Point3(msg.T_submap_pose.position.x,
                                               msg.T_submap_pose.position.y,
                                               msg.T_submap_pose.position.z));
+  // Convert keypoints
+  keypoints_.resize(msg.keypoints.size() / 2);
+  for (size_t i = 0; i < keypoints_.size(); ++i) {
+    keypoints_[i].x = msg.keypoints[2 * i];
+    keypoints_[i].y = msg.keypoints[2 * i + 1];
+  }
+
+  CHECK(keypoints_.size()) << " No keypoints in VLCFrame message!";
 
   // Convert versors and 3D keypoints
   if (!msg.versors.data.empty()) {
@@ -47,12 +58,12 @@ VLCFrame::VLCFrame(const pose_graph_tools_msgs::VLCFrameMsg& msg)
       if (depth < 1e-3) {
         // Depth is invalid for this keypoint and the 3D keypoint is set to zero.
         // Zero keypoints will not be used during stereo RANSAC.
-        keypoints_.push_back(gtsam::Vector3::Zero());
+        landmarks_.push_back(gtsam::Vector3::Zero());
       } else {
         // Depth is valid for this keypoint.
         // We can recover the 3D point by multiplying with the bearing vector
         // See sparseStereoReconstruction function in Stereo Matcher in Kimera-VIO.
-        keypoints_.push_back(depth * v / v(2));
+        landmarks_.push_back(depth * v / v(2));
       }
     }
   } else {
@@ -64,7 +75,7 @@ VLCFrame::VLCFrame(const pose_graph_tools_msgs::VLCFrameMsg& msg)
     sensor_msgs::ImageConstPtr ros_image_ptr(
         new sensor_msgs::Image(msg.descriptors_mat));
     descriptors_mat_ =
-        cv_bridge::toCvCopy(ros_image_ptr, sensor_msgs::image_encodings::TYPE_8UC1)
+        cv_bridge::toCvCopy(ros_image_ptr, sensor_msgs::image_encodings::TYPE_32FC1)
             ->image;
     initializeDescriptorsVector();
   } catch (...) {
@@ -92,13 +103,13 @@ void VLCFrame::toROSMessage(pose_graph_tools_msgs::VLCFrameMsg* msg) const {
 
   // Convert keypoints
   pcl::PointCloud<pcl::PointXYZ> versors;
-  for (size_t i = 0; i < keypoints_.size(); ++i) {
+  for (size_t i = 0; i < landmarks_.size(); ++i) {
     // Push bearing vector
     gtsam::Vector3 v_ = versors_[i];
     pcl::PointXYZ v(v_(0), v_(1), v_(2));
     versors.push_back(v);
     // Push keypoint depth
-    gtsam::Vector3 p_ = keypoints_[i];
+    gtsam::Vector3 p_ = landmarks_[i];
     if (p_.norm() < 1e-3) {
       // This 3D keypoint is not valid
       msg->depths.push_back(0);
@@ -111,12 +122,18 @@ void VLCFrame::toROSMessage(pose_graph_tools_msgs::VLCFrameMsg* msg) const {
   }
   pcl::toROSMsg(versors, msg->versors);
 
+  // convert keypoints
+  msg->keypoints.resize(keypoints_.size() * 2);
+  for (size_t i = 0; i < keypoints_.size(); ++i) {
+    msg->keypoints[2 * i] = keypoints_[i].x;
+    msg->keypoints[2 * i + 1] = keypoints_[i].y;
+  }
+
   // Convert descriptors
-  assert(descriptors_mat_.type() ==
-         CV_8UC1);  // check that the matrix is of type CV_8U
+  assert(descriptors_mat_.type() == CV_32FC1);  // check that the matrix is of type CV_32F
   cv_bridge::CvImage cv_img;
   // cv_img.header   = in_msg->header; // Yulun: need to set header explicitly?
-  cv_img.encoding = sensor_msgs::image_encodings::TYPE_8UC1;
+  cv_img.encoding = sensor_msgs::image_encodings::TYPE_32FC1;
   cv_img.image = descriptors_mat_;
   cv_img.toImageMsg(msg->descriptors_mat);
 }

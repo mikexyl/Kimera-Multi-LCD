@@ -28,7 +28,6 @@ using AdapterStereo = opengv::point_cloud::PointCloudAdapter;
 using RansacProblemStereo = opengv::sac_problems::point_cloud::PointCloudSacProblem;
 using BearingVectors =
     std::vector<gtsam::Vector3, Eigen::aligned_allocator<gtsam::Vector3>>;
-using DMatchVec = std::vector<cv::DMatch>;
 
 namespace kimera_multi_lcd {
 
@@ -43,7 +42,8 @@ LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::LoopClosureDetec
 }
 
 template <typename Database, typename FeatureDetector, typename FeatureMatcher>
-LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::~LoopClosureDetector() {}
+LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::~LoopClosureDetector() {
+}
 
 template <typename Database, typename FeatureDetector, typename FeatureMatcher>
 bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::globalDescExists(
@@ -58,8 +58,8 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::globalDescE
 }
 
 template <typename Database, typename FeatureDetector, typename FeatureMatcher>
-int LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::numGlobalDescsForRobot(
-    RobotId robot_id) const {
+int LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::
+    numGlobalDescsForRobot(RobotId robot_id) const {
   if (global_descs_.find(robot_id) != global_descs_.end()) {
     return global_descs_.at(robot_id).size();
   }
@@ -67,8 +67,8 @@ int LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::numGlobalDes
 }
 
 template <typename Database, typename FeatureDetector, typename FeatureMatcher>
-int LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::latestPoseIdWithGlobalDesc(
-    RobotId robot_id) const {
+int LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::
+    latestPoseIdWithGlobalDesc(RobotId robot_id) const {
   if (numGlobalDescsForRobot(robot_id) == 0) {
     return -1;
   }
@@ -76,10 +76,10 @@ int LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::latestPoseId
 }
 
 template <typename Database, typename FeatureDetector, typename FeatureMatcher>
-bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::findPreviousGlobalDesc(
-    const RobotPoseId& id,
-    int window,
-    GlobalDesc* previous_bow) {
+bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::
+    findPreviousGlobalDesc(const RobotPoseId& id,
+                           int window,
+                           GlobalDesc* previous_bow) {
   CHECK_GE(window, 1);
   RobotId robot_id = id.first;
   PoseId pose_id = id.second;
@@ -108,7 +108,8 @@ LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::getGlobalDesc(
 
 template <typename Database, typename FeatureDetector, typename FeatureMatcher>
 typename LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::PoseGlobalDesc
-LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::getGlobalDescs(const RobotId& robot_id) const {
+LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::getGlobalDescs(
+    const RobotId& robot_id) const {
   if (!global_descs_.count(robot_id)) {
     return PoseGlobalDesc();
   }
@@ -123,7 +124,8 @@ VLCFrame LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::getVLCF
 }
 
 template <typename Database, typename FeatureDetector, typename FeatureMatcher>
-std::map<PoseId, VLCFrame> LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::getVLCFrames(
+std::map<PoseId, VLCFrame>
+LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::getVLCFrames(
     const RobotId& robot_id) const {
   std::map<PoseId, VLCFrame> vlc_frames;
   for (const auto& robot_pose_id_vlc : vlc_frames_) {
@@ -166,47 +168,83 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::detectLoop(
 }
 
 template <typename Database, typename FeatureDetector, typename FeatureMatcher>
-void LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::computeMatchedIndices(
-    const RobotPoseId& vertex_query,
-    const RobotPoseId& vertex_match,
-    std::vector<unsigned int>* i_query,
-    std::vector<unsigned int>* i_match) const {
-  assert(i_query != NULL);
-  assert(i_match != NULL);
+void LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::
+    computeMatchedIndices(const RobotPoseId& vertex_query,
+                          const RobotPoseId& vertex_match,
+                          std::vector<unsigned int>* i_query,
+                          std::vector<unsigned int>* i_match) const {
+  VLOG(1) << "Computing matched indices between " << vertex_query.first << ":"
+          << vertex_query.second << " and " << vertex_match.first << ":"
+          << vertex_match.second << ".";
+  CHECK_NOTNULL(i_match);
+  CHECK_NOTNULL(i_query);
   i_query->clear();
   i_match->clear();
 
   // Get two best matches between frame descriptors.
   std::vector<DMatchVec> matches;
 
+  CHECK(vlc_frames_.find(vertex_query) != vlc_frames_.end())
+      << "VLCFrame for query " << vertex_query.first << ":" << vertex_query.second
+      << " does not exist.";
+  CHECK(vlc_frames_.find(vertex_match) != vlc_frames_.end())
+      << "VLCFrame for match " << vertex_match.first << ":" << vertex_match.second
+      << " does not exist.";
+
   VLCFrame frame_query = vlc_frames_.find(vertex_query)->second;
   VLCFrame frame_match = vlc_frames_.find(vertex_match)->second;
 
-  try {
-    feature_matcher_->knnMatch(
-        frame_query.descriptors_mat_, frame_match.descriptors_mat_, matches, 2u);
-  } catch (cv::Exception& e) {
-    ROS_ERROR("Failed KnnMatch in ComputeMatchedIndices. ");
-  }
+  // check if frames have keypoints and descriptors
+  CHECK(!frame_query.keypoints_.empty())
+      << "VLCFrame for query " << vertex_query.first << ":" << vertex_query.second
+      << " has no keypoints.";
+  CHECK(!frame_query.descriptors_mat_.empty())
+      << "VLCFrame for query " << vertex_query.first << ":" << vertex_query.second
+      << " has no descriptors.";
+  CHECK(!frame_match.keypoints_.empty())
+      << "VLCFrame for match " << vertex_match.first << ":" << vertex_match.second
+      << " has no keypoints.";
+  CHECK(!frame_match.descriptors_mat_.empty())
+      << "VLCFrame for match " << vertex_match.first << ":" << vertex_match.second
+      << " has no descriptors.";
+
+  // check size consistency
+  CHECK_EQ(frame_query.keypoints_.size(), frame_query.descriptors_mat_.rows)
+      << "VLCFrame for query " << vertex_query.first << ":" << vertex_query.second
+      << " has inconsistent keypoints and descriptors size.";
+  CHECK_EQ(frame_match.keypoints_.size(), frame_match.descriptors_mat_.rows)
+      << "VLCFrame for match " << vertex_match.first << ":" << vertex_match.second
+      << " has inconsistent keypoints and descriptors size.";
+
+  matchFeatures(frame_query.keypoints_,
+                frame_query.descriptors_mat_,
+                frame_match.keypoints_,
+                frame_match.descriptors_mat_,
+                matches);
+
+  // remove empty matches
+  matches.erase(
+      std::remove_if(
+          matches.begin(), matches.end(), [](const DMatchVec& m) { return m.empty(); }),
+      matches.end());
+
+  VLOG(1) << "Found " << matches.size() << " matches.";
 
   const size_t& n_matches = matches.size();
   for (size_t i = 0; i < n_matches; i++) {
     const DMatchVec& match = matches[i];
-    if (match.size() < 2) continue;
-    if (match[0].distance < params_.lowe_ratio_ * match[1].distance) {
-      i_query->push_back(match[0].queryIdx);
-      i_match->push_back(match[0].trainIdx);
-    }
+    i_query->push_back(match[0].queryIdx);
+    i_match->push_back(match[0].trainIdx);
   }
 }
 
 template <typename Database, typename FeatureDetector, typename FeatureMatcher>
-bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::geometricVerificationNister(
-    const RobotPoseId& vertex_query,
-    const RobotPoseId& vertex_match,
-    std::vector<unsigned int>* inlier_query,
-    std::vector<unsigned int>* inlier_match,
-    gtsam::Rot3* R_query_match) {
+bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::
+    geometricVerificationNister(const RobotPoseId& vertex_query,
+                                const RobotPoseId& vertex_match,
+                                std::vector<unsigned int>* inlier_query,
+                                std::vector<unsigned int>* inlier_match,
+                                gtsam::Rot3* R_query_match) {
   assert(NULL != inlier_query);
   assert(NULL != inlier_match);
 
@@ -235,7 +273,12 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::geometricVe
   ransac.threshold_ = params_.ransac_threshold_mono_;
 
   // Compute transformation via RANSAC.
+  VLOG(1) << "Starting Monocular RANSAC for geometric verification.";
+  auto time_ransac_start = std::chrono::high_resolution_clock::now();
   bool ransac_success = ransac.computeModel();
+  auto time_ransac_end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> elapsed_ransac = time_ransac_end - time_ransac_start;
+  VLOG(1) << "Monocular RANSAC took " << elapsed_ransac.count() * 1000 << " ms.";
   if (ransac_success) {
     double inlier_percentage =
         static_cast<double>(ransac.inliers_.size()) / query_versors.size();
@@ -275,9 +318,9 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::recoverPose
   opengv::points_t f_match, f_query;
   for (size_t i = 0; i < inlier_match->size(); i++) {
     gtsam::Vector3 point_query =
-        vlc_frames_[vertex_query].keypoints_.at(inlier_query->at(i));
+        vlc_frames_[vertex_query].landmarks_.at(inlier_query->at(i));
     gtsam::Vector3 point_match =
-        vlc_frames_[vertex_match].keypoints_.at(inlier_match->at(i));
+        vlc_frames_[vertex_match].landmarks_.at(inlier_match->at(i));
     if (point_query.norm() > 1e-3 && point_match.norm() > 1e-3) {
       f_query.push_back(point_query);
       f_match.push_back(point_match);

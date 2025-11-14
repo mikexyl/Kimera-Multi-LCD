@@ -49,6 +49,11 @@ struct XfeatNVWrapper : xfeat::XfeatNetVLADONNX {
     }
   }
 
+  auto nTotal() const {
+    CHECK_NOTNULL(db_);
+    return db_->nTotal();
+  }
+
   template <typename... Args>
   void search(Args&&... args) {
     CHECK_NOTNULL(db_);
@@ -111,33 +116,94 @@ class VLADLoopClosureDetector : public LoopClosureDetector<XfeatNVWrapper,
 
   void loadAndInitialize(const LcdParams& params) override {
     LoopClosureDetectorBase::loadAndInitialize(params);
+
+    LOG(INFO) << "dist_local: " << params_.dist_local_;
+
+    lcd_tp_wrapper_ = std::unique_ptr<LcdThirdPartyWrapper>(
+        new LcdThirdPartyWrapper(params.lcd_tp_params_));
+
     LOG(INFO) << "load lg from: " << lcd_params_.lcd_lg_model_path_;
     LOG(INFO) << "load faiss from: " << lcd_params_.lcd_faiss_index_path_;
-    feature_matcher_ =
-        xfeat::LighterGlueCV::create(env_,
-                                     xfeat::LighterGlueCV::Params{
-                                         .model_path = lcd_params_.lcd_lg_model_path_,
-                                         .use_gpu = true,
-                                         .min_score = -1,
-                                         .n_kpts = lcd_params_.lcd_lg_num_features_,
-                                     });
+    feature_matcher_ = xfeat::LighterGlueCV::create(
+        env_,
+        xfeat::LighterGlueCV::Params{
+            .model_path = lcd_params_.lcd_lg_model_path_,
+            .use_gpu = true,
+            .min_score = -1,
+            .n_kpts = lcd_params_.lcd_lg_num_features_,
+            // TODO(mike): add params to input real images's size
+            .image_size = cv::Size(1224, 1024)});  // dummy size, not used for matching
     LOG(INFO) << "VLADLoopClosureDetector initialized.";
   }
 
   virtual std::unique_ptr<Database> createDatabase() override {
+    LOG(INFO) << "Creating FAISS database";
+    auto faiss_mode = Database::Database::IndexMode::kIVFFlat;
+    int faiss_dim = 0;
+    if (lcd_params_.lcd_faiss_index_path_.empty()) {
+      faiss_mode = Database::Database::IndexMode::kFlat;
+      faiss_dim = 512;
+    }
     auto faiss_db = std::make_unique<Database::Database>(
-        Database::Database::IndexMode::kIVFFlat, lcd_params_.lcd_faiss_index_path_);
+        faiss_mode, lcd_params_.lcd_faiss_index_path_, false, faiss_dim);
+    // faiss_db.
     return std::make_unique<Database>(std::move(faiss_db),
                                       env_,
                                       lcd_params_.xfeat_nv_head_model_path_,
                                       lcd_params_.netvlad_model_path_,
-                                      kVLADLCDUseGPU);
+                                      kVLADLCDUseGPU,
+                                      lcd_params_.network_input_height_ / 16,
+                                      lcd_params_.network_input_width_ / 16);
+  }
+
+  void matchFeatures(const std::vector<cv::Point2f>& query_kpts,
+                     const cv::Mat& query_desc,
+                     std::vector<cv::Point2f>& train_kpts,
+                     const cv::Mat& train_desc,
+                     std::vector<DMatchVec>& matches) const override {
+    VLOG(1) << "VLADLoopClosureDetector: Matching features between query and match.";
+    // check any of the descriptors or keypoints is empty
+    CHECK(!query_desc.empty()) << "VLADLoopClosureDetector: query_desc is empty";
+    CHECK(!train_desc.empty()) << "VLADLoopClosureDetector: train_desc is empty";
+    CHECK(!query_kpts.empty()) << "VLADLoopClosureDetector: query_kpts is empty";
+    CHECK(!train_kpts.empty()) << "VLADLoopClosureDetector: train_kpts is empty";
+
+    auto lg_matcher = std::dynamic_pointer_cast<xfeat::LighterGlueCV>(feature_matcher_);
+    CHECK(lg_matcher.get() != nullptr)
+        << "VLADLoopClosureDetector: feature_matcher_ is not LighterGlueCV";
+
+    xfeat::DetectionResult query_det;
+    query_det.keypoints = cv::Mat(query_kpts).reshape(1);
+    query_det.descriptors = query_desc;
+    // set all scores to 1
+    query_det.scores = cv::Mat::ones(query_det.keypoints.rows, 1, CV_32F);
+
+    CHECK_EQ(query_det.keypoints.rows, query_desc.rows)
+        << "VLADLoopClosureDetector: query keypoints and descriptors size mismatch";
+
+    xfeat::DetectionResult train_det;
+    train_det.keypoints = cv::Mat(train_kpts).reshape(1);
+    train_det.descriptors = train_desc;
+    CHECK_EQ(train_det.keypoints.rows, train_desc.rows)
+        << "VLADLoopClosureDetector: train keypoints and descriptors size mismatch";
+    // set all scores to 1
+    train_det.scores = cv::Mat::ones(train_det.keypoints.rows, 1, CV_32F);
+
+    DMatchVec lg_matches;
+    lg_matcher->match(query_det, train_det, lg_matches);
+
+    // convert to knn result format
+    matches.clear();
+    for (const auto& match : lg_matches) {
+      matches.push_back(DMatchVec(1, match));
+    }
   }
 
   // Disambiguate overloaded templated base methods by providing an explicit
   // override that matches the instantiated signature (RobotPoseId, cv::Mat).
   void addGlobalDesc(const RobotPoseId& id,
                      const Database::GlobalDesc& bow_vector) override {
+    // time this function
     const size_t robot_id = id.first;
     const size_t pose_id = id.second;
     // Skip if this BoW vector has been added
@@ -150,7 +216,9 @@ class VLADLoopClosureDetector : public LoopClosureDetector<XfeatNVWrapper,
       ROS_INFO("Initialized BoW for robot %lu.", robot_id);
     }
     // Add Bow vector to the robot's database
+    // time this
     faiss::idx_t entry_id_faiss = db_[robot_id]->add(bow_vector);
+
     size_t entry_id = static_cast<size_t>(entry_id_faiss);
     // Save the raw bow vectors
     global_descs_[robot_id][pose_id] = bow_vector;

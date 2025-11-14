@@ -5,7 +5,7 @@
 namespace kimera_multi_lcd {
 
 DEFINE_double(max_nss_vlad_distance,
-              0.06,
+              0.999,  // turn this off for now
               "Maximum NSS distance for VLAD loop closure detection.");
 
 bool VLADLoopClosureDetector::detectLoopWithRobot(
@@ -68,24 +68,24 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
   Database::Database::QueryDistances query_distance(top_k,
                                                     std::numeric_limits<float>::max());
 
-  robot_db->search(global_desc, top_k, query_result, query_distance);
+  robot_db->search(
+      global_desc, top_k, query_result, query_distance, max_possible_match_id);
 
   // remove -1 from query_result
+  size_t removed_invalid = 0;
+  size_t removed_recent = 0;
   for (size_t i = 0; i < query_result.size(); ++i) {
-    if (query_result[i] == -1 or query_result[i] >= max_possible_match_id) {
+    if (query_result[i] == -1) {
+      removed_invalid++;
+      query_result.erase(query_result.begin() + i);
+      query_distance.erase(query_distance.begin() + i);
+      --i;  // Adjust index after erasure.
+    } else if (query_result[i] >= max_possible_match_id) {
+      removed_recent++;
       query_result.erase(query_result.begin() + i);
       query_distance.erase(query_distance.begin() + i);
       --i;  // Adjust index after erasure.
     }
-  }
-
-  if (VLOG_IS_ON(1)) {
-    // print query results and distances
-    std::stringstream ss;
-    ss << "VLADLoopClosureDetector: query results: ";
-    for (size_t i = 0; i < query_result.size(); ++i)
-      ss << "{" << query_result[i] << ", " << query_distance[i] << "} ";
-    VLOG(1) << ss.str();
   }
 
   // if the query result has recent frames, throw error
@@ -118,6 +118,8 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
   }
 
   if (FLAGS_max_nss_vlad_distance > 0.0 && nss_distance > FLAGS_max_nss_vlad_distance) {
+    LOG(INFO) << "CONDITION FAILED: NSS distance " << nss_distance
+              << " exceeds threshold " << FLAGS_max_nss_vlad_distance;
     VLOG(1) << "VLADLoopClosureDetector: NSS distance " << nss_distance
             << " exceeds threshold " << FLAGS_max_nss_vlad_distance
             << ". No loop closure.";
@@ -142,13 +144,20 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
   };
 
   // Remove high distances from the QueryResults based on nss.
+  double nss_threshold = nss_distance / lcd_params_.alpha_;
+
+  size_t removed_by_nss = 0;
   for (size_t i = 0; i < query_result.size(); ++i) {
-    if (query_distance[i] > nss_distance / lcd_params_.alpha_) {
+    if (query_distance[i] > nss_threshold) {
+      removed_by_nss++;
       query_result.erase(query_result.begin() + i);
       query_distance.erase(query_distance.begin() + i);
       --i;  // Adjust index after erasure.
     }
   }
+
+  VLOG_IF(1, query_result.empty())
+      << "VLADLoopClosureDetector: No matches found after applying nss threshold.";
 
   auto dbow_query_result = faiss_to_dbow_queryresults(query_result, query_distance);
 
@@ -156,33 +165,65 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
     DBoW2::Result best_result = dbow_query_result[0];
     double normalized_score = best_result.Score / nss_factor;
     const PoseId best_match_pose_id = db_EntryId_to_PoseId_[robot][best_result.Id];
+
     if (robot != robot_query) {
+      LOG(INFO) << "Inter-robot loop closure detected: " << robot_query << ":"
+                << pose_query << " <-> " << robot << ":" << best_match_pose_id;
       vertex_matches->push_back(std::make_pair(robot, best_match_pose_id));
       if (scores) scores->push_back(normalized_score);
     } else {
       // Check dist_local param
       int pose_query_int = (int)pose_query;
       int pose_match_int = (int)best_match_pose_id;
-      if (std::abs(pose_query_int - pose_match_int) < params_.dist_local_) return false;
+      int pose_distance = std::abs(pose_query_int - pose_match_int);
+
+      LOG(INFO) << "Same-robot match: checking temporal distance=" << pose_distance
+                << " vs dist_local=" << params_.dist_local_;
+
+      if (pose_distance < params_.dist_local_) {
+        LOG(INFO) << "CONDITION FAILED: Temporal distance too small (" << pose_distance
+                  << " < " << params_.dist_local_ << ")";
+        return false;
+      }
       // Compute islands in the matches.
       // An island is a group of matches with close frame_ids.
       std::vector<MatchIsland> islands;
       lcd_tp_wrapper_->computeIslands(&dbow_query_result, &islands);
+
+      LOG(INFO) << "Computed islands: count=" << islands.size();
+
       if (!islands.empty()) {
         // Check for temporal constraint if it is an single robot lc
         // Find the best island grouping using MatchIsland sorting.
         const MatchIsland& best_island =
             *std::max_element(islands.begin(), islands.end());
 
+        LOG(INFO) << "Best island: best_score=" << best_island.best_score_
+                  << ", island_score=" << best_island.island_score_
+                  << ", size=" << best_island.size() << ", range=["
+                  << best_island.start_id_ << "," << best_island.end_id_ << "]";
+
         // Run temporal constraint check on this best island.
         bool pass_temporal_constraint =
             lcd_tp_wrapper_->checkTemporalConstraint(pose_query, best_island);
+
+        LOG(INFO) << "Temporal constraint check: "
+                  << (pass_temporal_constraint ? "PASSED" : "FAILED");
+
         if (pass_temporal_constraint) {
+          LOG(INFO) << "Same-robot loop closure detected: " << robot_query << ":"
+                    << pose_query << " <-> " << robot << ":" << best_match_pose_id;
           vertex_matches->push_back(std::make_pair(robot, best_match_pose_id));
           if (scores) scores->push_back(normalized_score);
+        } else {
+          LOG(INFO) << "CONDITION FAILED: Temporal constraint not satisfied.";
         }
+      } else {
+        LOG(INFO) << "CONDITION FAILED: No islands computed from matches.";
       }
     }
+  } else {
+    LOG(INFO) << "No valid DBoW query results after conversion.";
   }
 
   if (scores) CHECK_EQ(vertex_matches->size(), scores->size());

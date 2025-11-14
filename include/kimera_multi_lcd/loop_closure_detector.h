@@ -27,6 +27,8 @@
 
 namespace kimera_multi_lcd {
 
+using DMatchVec = std::vector<cv::DMatch>;
+
 class LoopClosureDetectorBase {
  public:
   virtual ~LoopClosureDetectorBase() = default;
@@ -184,6 +186,12 @@ class LoopClosureDetector : public LoopClosureDetectorBase {
   }
 
   inline LcdParams getParams() const { return params_; }
+
+  virtual void matchFeatures(const std::vector<cv::Point2f>& query_kpts,
+                             const cv::Mat& query_desc,
+                             std::vector<cv::Point2f>& train_kpts,
+                             const cv::Mat& train_desc,
+                             std::vector<DMatchVec>& matches) const = 0;
 
  protected:
   // Loop closure detection parameters
