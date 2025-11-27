@@ -49,20 +49,24 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
   CHECK(!global_desc.empty()) << "VLADLoopClosureDetector: Global descriptor for pose "
                               << robot_query << ":" << pose_query << " is empty.";
 
-  if (pose_query < static_cast<PoseId>(lcd_params_.local_window_size_ +
-                                       lcd_params_.max_db_results_)) {
+  CHECK(params_.inter_robot_only_)
+      << "intra-robot loop closure detection under debugging.";
+  if (params_.inter_robot_only_ && robot_query == robot) return false;
+
+  if (pose_query <
+      static_cast<PoseId>(params_.local_window_size_ + params_.max_db_results_)) {
     VLOG(1) << "VLADLoopClosureDetector: Not enough frames processed yet. "
             << "Skipping loop closure detection.";
     return false;
   }
 
   int max_possible_match_id =
-      pose_query - lcd_params_.local_window_size_ - lcd_params_.max_db_results_;
+      pose_query - params_.local_window_size_ - params_.max_db_results_;
   if (max_possible_match_id < 0) {
     max_possible_match_id = 0;
   }
 
-  int top_k = lcd_params_.max_db_results_ + lcd_params_.local_window_size_;
+  int top_k = params_.max_db_results_ + params_.local_window_size_;
 
   Database::Database::QueryResults query_result(top_k, -1);
   Database::Database::QueryDistances query_distance(top_k,
@@ -144,7 +148,7 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
   };
 
   // Remove high distances from the QueryResults based on nss.
-  double nss_threshold = nss_distance / lcd_params_.alpha_;
+  double nss_threshold = nss_distance / params_.alpha_;
 
   size_t removed_by_nss = 0;
   for (size_t i = 0; i < query_result.size(); ++i) {

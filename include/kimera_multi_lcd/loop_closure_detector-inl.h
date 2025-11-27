@@ -26,8 +26,6 @@ using RansacProblem =
 using Adapter = opengv::relative_pose::CentralRelativeAdapter;
 using AdapterStereo = opengv::point_cloud::PointCloudAdapter;
 using RansacProblemStereo = opengv::sac_problems::point_cloud::PointCloudSacProblem;
-using BearingVectors =
-    std::vector<gtsam::Vector3, Eigen::aligned_allocator<gtsam::Vector3>>;
 
 namespace kimera_multi_lcd {
 
@@ -262,6 +260,34 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::
     match_versors[i] = vlc_frames_[vertex_match].versors_.at(i_match[i]);
   }
 
+  visualizer_->visualizeMatchesVersors(&vlc_frames_[vertex_query],
+                                       &vlc_frames_[vertex_match],
+                                       query_versors,
+                                       match_versors);
+  visualizer_->visualizeMatchesKeypoints(
+      &vlc_frames_[vertex_query], &vlc_frames_[vertex_match], i_query, i_match);
+
+  VLOG(1) << "Preparing RANSAC with " << query_versors.size() << " correspondences";
+
+  // Check for valid versors
+  size_t valid_versors = 0;
+  for (size_t i = 0; i < query_versors.size(); i++) {
+    if (query_versors[i].norm() > 1e-6 && match_versors[i].norm() > 1e-6) {
+      valid_versors++;
+    } else {
+      LOG(WARNING) << "Invalid versor at index " << i
+                   << " query norm: " << query_versors[i].norm()
+                   << " match norm: " << match_versors[i].norm();
+    }
+  }
+  VLOG(1) << "Valid versors: " << valid_versors << " / " << query_versors.size();
+
+  if (query_versors.size() < 5) {
+    LOG(WARNING) << "Too few correspondences (" << query_versors.size()
+                 << ") for RANSAC, need at least 5";
+    return false;
+  }
+
   Adapter adapter(query_versors, match_versors);
 
   // Use RANSAC to solve the central-relative-pose problem.
@@ -274,14 +300,24 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::
 
   // Compute transformation via RANSAC.
   VLOG(1) << "Starting Monocular RANSAC for geometric verification.";
+  VLOG(1) << "RANSAC params - max_iterations: " << params_.max_ransac_iterations_mono_
+          << " threshold: " << params_.ransac_threshold_mono_;
   auto time_ransac_start = std::chrono::high_resolution_clock::now();
   bool ransac_success = ransac.computeModel();
   auto time_ransac_end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> elapsed_ransac = time_ransac_end - time_ransac_start;
   VLOG(1) << "Monocular RANSAC took " << elapsed_ransac.count() * 1000 << " ms.";
+  VLOG(1) << "RANSAC result - success: " << ransac_success
+          << " iterations performed: " << ransac.iterations_
+          << " inliers found: " << ransac.inliers_.size();
+  inlier_query->clear();
+  inlier_match->clear();
   if (ransac_success) {
     double inlier_percentage =
         static_cast<double>(ransac.inliers_.size()) / query_versors.size();
+
+    VLOG(1) << "Monocular RANSAC found " << ransac.inliers_.size()
+            << " inliers, with inlier percentage " << inlier_percentage << ".";
 
     if (inlier_percentage >= params_.ransac_inlier_percentage_mono_) {
       if (R_query_match) {
@@ -289,8 +325,6 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::
         *R_query_match = gtsam::Rot3(monoT_query_match.block<3, 3>(0, 0));
       }
 
-      inlier_query->clear();
-      inlier_match->clear();
       for (auto idx : ransac.inliers_) {
         inlier_query->push_back(i_query[idx]);
         inlier_match->push_back(i_match[idx]);
@@ -330,7 +364,8 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::recoverPose
   }
 
   if (f_query.size() < 3) {
-    // ROS_INFO("Less than 3 putative correspondences.");
+    LOG(WARNING) << "Too few 3D-3D correspondences (" << f_query.size()
+                 << ") for RANSAC, need at least 3.";
     return false;
   }
 
@@ -348,8 +383,23 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::recoverPose
   ransac.max_iterations_ = params_.max_ransac_iterations_;
   ransac.threshold_ = params_.ransac_threshold_;
 
+  // log input sizes of RANSAC
+  VLOG(1) << "RANSAC input - total correspondences: " << f_match.size();
+
+  // log details and timing of ransac
+  VLOG(1) << "Starting Stereo RANSAC for geometric verification.";
+  VLOG(1) << "RANSAC params - max_iterations: " << params_.max_ransac_iterations_
+          << " threshold: " << params_.ransac_threshold_;
+  auto time_ransac_start = std::chrono::high_resolution_clock::now();
+
   // Compute transformation via RANSAC.
   bool ransac_success = ransac.computeModel();
+  auto time_ransac_end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> elapsed_ransac = time_ransac_end - time_ransac_start;
+  VLOG(1) << "Stereo RANSAC took " << elapsed_ransac.count() * 1000 << " ms.";
+  VLOG(1) << "RANSAC result - success: " << ransac_success
+          << " iterations performed: " << ransac.iterations_
+          << " inliers found: " << ransac.inliers_.size();
 
   if (ransac_success) {
     if (ransac.inliers_.size() < params_.geometric_verification_min_inlier_count_) {

@@ -28,6 +28,9 @@ typedef std::pair<RobotId, PoseId> RobotPoseId;
 typedef std::set<RobotPoseId> RobotPoseIdSet;
 typedef std::vector<RobotPoseId> RobotPoseIdVector;
 
+using BearingVectors =
+    std::vector<gtsam::Vector3, Eigen::aligned_allocator<gtsam::Vector3>>;
+
 // Each edge in the pose graph is uniquely identified by four integers
 // (robot_src, frame_src, robot_dst, frame_dst)
 struct EdgeID {
@@ -254,6 +257,6 @@ struct LcdParams {
   bool operator==(const LcdParams& other) const { return equals(other); }
 };
 
-typedef std::map<RobotPoseId, VLCFrame, std::less<RobotPoseId> > VLCFrameDict;
+typedef std::map<RobotPoseId, VLCFrame, std::less<RobotPoseId>> VLCFrameDict;
 
 }  // namespace kimera_multi_lcd

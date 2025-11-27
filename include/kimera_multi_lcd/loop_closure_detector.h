@@ -25,6 +25,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "kimera_multi_lcd/visualizer.h"
+
 namespace kimera_multi_lcd {
 
 using DMatchVec = std::vector<cv::DMatch>;
@@ -34,10 +36,17 @@ class LoopClosureDetectorBase {
   virtual ~LoopClosureDetectorBase() = default;
 
   // Load params and initialize
-  virtual void loadAndInitialize(const LcdParams& params) { lcd_params_ = params; }
+  virtual void loadAndInitialize(const LcdParams& params) { params_ = params; }
+
+  void setVisualizer(std::shared_ptr<Visualizer> visualizer) {
+    visualizer_ = visualizer;
+  }
+
+ public:
+  std::shared_ptr<Visualizer> visualizer_;
 
  protected:
-  LcdParams lcd_params_;
+  LcdParams params_;
 
   // Dictionary of VLC frames
   VLCFrameDict vlc_frames_;
@@ -194,9 +203,6 @@ class LoopClosureDetector : public LoopClosureDetectorBase {
                              std::vector<DMatchVec>& matches) const = 0;
 
  protected:
-  // Loop closure detection parameters
-  LcdParams params_;
-
   // Track loop closure stats
   size_t total_global_desc_matches_;
   size_t total_geom_verifications_mono_;

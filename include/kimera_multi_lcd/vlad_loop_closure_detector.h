@@ -122,15 +122,15 @@ class VLADLoopClosureDetector : public LoopClosureDetector<XfeatNVWrapper,
     lcd_tp_wrapper_ = std::unique_ptr<LcdThirdPartyWrapper>(
         new LcdThirdPartyWrapper(params.lcd_tp_params_));
 
-    LOG(INFO) << "load lg from: " << lcd_params_.lcd_lg_model_path_;
-    LOG(INFO) << "load faiss from: " << lcd_params_.lcd_faiss_index_path_;
+    LOG(INFO) << "load lg from: " << params_.lcd_lg_model_path_;
+    LOG(INFO) << "load faiss from: " << params_.lcd_faiss_index_path_;
     feature_matcher_ = xfeat::LighterGlueCV::create(
         env_,
         xfeat::LighterGlueCV::Params{
-            .model_path = lcd_params_.lcd_lg_model_path_,
+            .model_path = params_.lcd_lg_model_path_,
             .use_gpu = true,
             .min_score = -1,
-            .n_kpts = lcd_params_.lcd_lg_num_features_,
+            .n_kpts = params_.lcd_lg_num_features_,
             // TODO(mike): add params to input real images's size
             .image_size = cv::Size(1224, 1024)});  // dummy size, not used for matching
     LOG(INFO) << "VLADLoopClosureDetector initialized.";
@@ -140,20 +140,20 @@ class VLADLoopClosureDetector : public LoopClosureDetector<XfeatNVWrapper,
     LOG(INFO) << "Creating FAISS database";
     auto faiss_mode = Database::Database::IndexMode::kIVFFlat;
     int faiss_dim = 0;
-    if (lcd_params_.lcd_faiss_index_path_.empty()) {
+    if (params_.lcd_faiss_index_path_.empty()) {
       faiss_mode = Database::Database::IndexMode::kFlat;
       faiss_dim = 512;
     }
     auto faiss_db = std::make_unique<Database::Database>(
-        faiss_mode, lcd_params_.lcd_faiss_index_path_, false, faiss_dim);
+        faiss_mode, params_.lcd_faiss_index_path_, false, faiss_dim);
     // faiss_db.
     return std::make_unique<Database>(std::move(faiss_db),
                                       env_,
-                                      lcd_params_.xfeat_nv_head_model_path_,
-                                      lcd_params_.netvlad_model_path_,
+                                      params_.xfeat_nv_head_model_path_,
+                                      params_.netvlad_model_path_,
                                       kVLADLCDUseGPU,
-                                      lcd_params_.network_input_height_ / 16,
-                                      lcd_params_.network_input_width_ / 16);
+                                      params_.network_input_height_ / 16,
+                                      params_.network_input_width_ / 16);
   }
 
   void matchFeatures(const std::vector<cv::Point2f>& query_kpts,
@@ -243,11 +243,11 @@ class VLADLoopClosureDetector : public LoopClosureDetector<XfeatNVWrapper,
 
   std::optional<RobotPoseId> findFirstRobotPoseIdOutsideLocalWindow(
       const RobotPoseId& frame_id) const {
-    if (frame_id.second <= static_cast<PoseId>(lcd_params_.local_window_size_)) {
+    if (frame_id.second <= static_cast<PoseId>(params_.local_window_size_)) {
       return std::nullopt;  // No frames outside the local window.
     } else {
       return std::make_pair(frame_id.first,
-                            frame_id.second - lcd_params_.local_window_size_);
+                            frame_id.second - params_.local_window_size_);
       // Return the first frame ID outside the local window.
     }
   }
