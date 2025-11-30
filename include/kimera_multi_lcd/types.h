@@ -221,6 +221,9 @@ struct LcdParams {
   std::string netvlad_model_path_{};
   int lcd_min_matched_features_ = 5;
 
+  int image_width_ = 1224;
+  int image_height_ = 1024;
+
   // Spatial dimensions expected by onnx models used in the pipeline
   int network_input_width_ = 320;
   int network_input_height_ = 224;

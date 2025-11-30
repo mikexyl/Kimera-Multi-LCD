@@ -49,8 +49,6 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
   CHECK(!global_desc.empty()) << "VLADLoopClosureDetector: Global descriptor for pose "
                               << robot_query << ":" << pose_query << " is empty.";
 
-  CHECK(params_.inter_robot_only_)
-      << "intra-robot loop closure detection under debugging.";
   if (params_.inter_robot_only_ && robot_query == robot) return false;
 
   if (pose_query <
@@ -160,13 +158,66 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
     }
   }
 
+
+
   VLOG_IF(1, query_result.empty())
       << "VLADLoopClosureDetector: No matches found after applying nss threshold.";
 
   auto dbow_query_result = faiss_to_dbow_queryresults(query_result, query_distance);
 
   if (!dbow_query_result.empty()) {
-    DBoW2::Result best_result = dbow_query_result[0];
+    // By default use the raw DBow query results. For same-robot matches we will
+    // aggregate nearby frames' scores (±kNeighborhood) and use the aggregated
+    // results for island computation and best-match selection.
+    DBoW2::QueryResults aggregated_dbow_query_result;
+    DBoW2::QueryResults* use_results = &dbow_query_result;
+
+    if (robot == robot_query) {
+      // Aggregate scores in a neighborhood around each matched entry id.
+      const int kNeighborhood = 10;  // +/- 10 frames
+      const size_t num_entries = db_EntryId_to_PoseId_[robot].size();
+      std::vector<double> accum_scores(num_entries, 0.0);
+      std::vector<int> neighbor_counts(num_entries, 0);
+
+      for (const auto& res : dbow_query_result) {
+        const int id = res.Id;
+        const int start = std::max(0, id - kNeighborhood);
+        const int end = std::min(static_cast<int>(num_entries) - 1, id + kNeighborhood);
+        for (int nid = start; nid <= end; ++nid) {
+          accum_scores[nid] += res.Score;
+          neighbor_counts[nid] += 1;
+        }
+      }
+
+      // Only keep aggregated entries that have at least 3 contributing
+      // neighboring matches (including the candidate itself).
+      const int kMinNeighborMatches = 3;
+      for (size_t i = 0; i < num_entries; ++i) {
+        if (accum_scores[i] > 0.0 && neighbor_counts[i] >= kMinNeighborMatches) {
+          DBoW2::Result r;
+          r.Id = static_cast<int>(i);
+          r.Score = accum_scores[i];
+          aggregated_dbow_query_result.push_back(r);
+        }
+      }
+
+      // Sort aggregated results by descending score.
+      std::sort(aggregated_dbow_query_result.begin(),
+                aggregated_dbow_query_result.end(),
+                [](const DBoW2::Result& a, const DBoW2::Result& b) {
+                  return a.Score > b.Score;
+                });
+
+      VLOG(2) << "Aggregated " << dbow_query_result.size()
+              << " results into " << aggregated_dbow_query_result.size()
+              << " entries using +/-" << kNeighborhood << " neighborhood.";
+
+      if (!aggregated_dbow_query_result.empty()) use_results = &aggregated_dbow_query_result;
+    }
+
+    // Select best result from the chosen results (aggregated for same-robot,
+    // raw for inter-robot).
+    DBoW2::Result best_result = (*use_results)[0];
     double normalized_score = best_result.Score / nss_factor;
     const PoseId best_match_pose_id = db_EntryId_to_PoseId_[robot][best_result.Id];
 
@@ -192,7 +243,12 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
       // Compute islands in the matches.
       // An island is a group of matches with close frame_ids.
       std::vector<MatchIsland> islands;
-      lcd_tp_wrapper_->computeIslands(&dbow_query_result, &islands);
+      // Use aggregated results for island computation if available.
+      if (use_results == &dbow_query_result) {
+        lcd_tp_wrapper_->computeIslands(&dbow_query_result, &islands);
+      } else {
+        lcd_tp_wrapper_->computeIslands(&aggregated_dbow_query_result, &islands);
+      }
 
       LOG(INFO) << "Computed islands: count=" << islands.size();
 

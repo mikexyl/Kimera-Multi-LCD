@@ -132,7 +132,7 @@ class VLADLoopClosureDetector : public LoopClosureDetector<XfeatNVWrapper,
             .min_score = -1,
             .n_kpts = params_.lcd_lg_num_features_,
             // TODO(mike): add params to input real images's size
-            .image_size = cv::Size(1224, 1024)});  // dummy size, not used for matching
+            .image_size = cv::Size(params_.image_width_, params_.image_height_)});
     LOG(INFO) << "VLADLoopClosureDetector initialized.";
   }
 
