@@ -90,6 +90,16 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
     }
   }
 
+  std::vector<RobotPoseId> query_result_ids;
+  for (const auto& id : query_result) {
+    query_result_ids.push_back(std::make_pair(robot, id));
+  }
+
+  if (visualizer_) {
+    visualizer_->visualizeCandidates(
+        "lcd/raw_vlad", robot_pose_id, query_result_ids, query_distance);
+  }
+
   // if the query result has recent frames, throw error
   for (const auto& id : query_result) {
     if (id >= max_possible_match_id) {
@@ -158,7 +168,16 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
     }
   }
 
-
+  std::vector<RobotPoseId> nss_result_ids;
+  std::vector<float> nss_result_distances;
+  for (size_t i = 0; i < query_result.size(); ++i) {
+    nss_result_ids.push_back(std::make_pair(robot, query_result[i]));
+    nss_result_distances.push_back(query_distance[i]);
+  }
+  if (visualizer_) {
+    visualizer_->visualizeCandidates(
+        "lcd/nss_filtered_vlad", robot_pose_id, nss_result_ids, nss_result_distances);
+  }
 
   VLOG_IF(1, query_result.empty())
       << "VLADLoopClosureDetector: No matches found after applying nss threshold.";
@@ -172,47 +191,57 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
     DBoW2::QueryResults aggregated_dbow_query_result;
     DBoW2::QueryResults* use_results = &dbow_query_result;
 
-    if (robot == robot_query) {
-      // Aggregate scores in a neighborhood around each matched entry id.
-      const int kNeighborhood = 10;  // +/- 10 frames
-      const size_t num_entries = db_EntryId_to_PoseId_[robot].size();
-      std::vector<double> accum_scores(num_entries, 0.0);
-      std::vector<int> neighbor_counts(num_entries, 0);
+    // Aggregate scores in a neighborhood around each matched entry id.
+    const int kNeighborhood = 10;  // +/- 10 frames
+    const size_t num_entries = db_EntryId_to_PoseId_[robot].size();
+    std::vector<float> accum_scores(num_entries, 0.0);
+    std::vector<int> neighbor_counts(num_entries, 0);
 
-      for (const auto& res : dbow_query_result) {
-        const int id = res.Id;
-        const int start = std::max(0, id - kNeighborhood);
-        const int end = std::min(static_cast<int>(num_entries) - 1, id + kNeighborhood);
-        for (int nid = start; nid <= end; ++nid) {
-          accum_scores[nid] += res.Score;
-          neighbor_counts[nid] += 1;
-        }
+    for (const auto& res : dbow_query_result) {
+      const int id = res.Id;
+      const int start = std::max(0, id - kNeighborhood);
+      const int end = std::min(static_cast<int>(num_entries) - 1, id + kNeighborhood);
+      for (int nid = start; nid <= end; ++nid) {
+        accum_scores[nid] += res.Score;
+        neighbor_counts[nid] += 1;
       }
+    }
 
-      // Only keep aggregated entries that have at least 3 contributing
-      // neighboring matches (including the candidate itself).
-      const int kMinNeighborMatches = 3;
-      for (size_t i = 0; i < num_entries; ++i) {
-        if (accum_scores[i] > 0.0 && neighbor_counts[i] >= kMinNeighborMatches) {
-          DBoW2::Result r;
-          r.Id = static_cast<int>(i);
-          r.Score = accum_scores[i];
-          aggregated_dbow_query_result.push_back(r);
-        }
+    // Only keep aggregated entries that have at least 3 contributing
+    // neighboring matches (including the candidate itself).
+    const int kMinNeighborMatches = 3;
+    for (size_t i = 0; i < num_entries; ++i) {
+      if (accum_scores[i] > 0.0 && neighbor_counts[i] >= kMinNeighborMatches) {
+        DBoW2::Result r;
+        r.Id = static_cast<int>(i);
+        r.Score = accum_scores[i];
+        aggregated_dbow_query_result.push_back(r);
       }
+    }
 
-      // Sort aggregated results by descending score.
-      std::sort(aggregated_dbow_query_result.begin(),
-                aggregated_dbow_query_result.end(),
-                [](const DBoW2::Result& a, const DBoW2::Result& b) {
-                  return a.Score > b.Score;
-                });
+    // Sort aggregated results by descending score.
+    std::sort(aggregated_dbow_query_result.begin(),
+              aggregated_dbow_query_result.end(),
+              [](const DBoW2::Result& a, const DBoW2::Result& b) {
+                return a.Score > b.Score;
+              });
 
-      VLOG(2) << "Aggregated " << dbow_query_result.size()
-              << " results into " << aggregated_dbow_query_result.size()
-              << " entries using +/-" << kNeighborhood << " neighborhood.";
+    VLOG(2) << "Aggregated " << dbow_query_result.size() << " results into "
+            << aggregated_dbow_query_result.size() << " entries using +/-"
+            << kNeighborhood << " neighborhood.";
 
-      if (!aggregated_dbow_query_result.empty()) use_results = &aggregated_dbow_query_result;
+    if (!aggregated_dbow_query_result.empty())
+      use_results = &aggregated_dbow_query_result;
+
+    std::vector<RobotPoseId> aggr_result_ids;
+    for (const auto& res : *use_results) {
+      aggr_result_ids.push_back(std::make_pair(robot, res.Id));
+    }
+    if (visualizer_) {
+      visualizer_->visualizeCandidates(
+          "lcd/aggregated_vlad", robot_pose_id, aggr_result_ids, accum_scores);
+      visualizer_->visualizeCandidates(
+          "lcd/best_vlad", robot_pose_id, {aggr_result_ids.front()}, accum_scores);
     }
 
     // Select best result from the chosen results (aggregated for same-robot,

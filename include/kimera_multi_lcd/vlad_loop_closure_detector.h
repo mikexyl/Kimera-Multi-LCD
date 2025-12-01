@@ -190,6 +190,8 @@ class VLADLoopClosureDetector : public LoopClosureDetector<XfeatNVWrapper,
     train_det.scores = cv::Mat::ones(train_det.keypoints.rows, 1, CV_32F);
 
     DMatchVec lg_matches;
+    LOG(INFO) << "Matching " << query_det.keypoints.rows << " query keypoints with "
+              << train_det.keypoints.rows << " train keypoints.";
     lg_matcher->match(query_det, train_det, lg_matches);
 
     // convert to knn result format

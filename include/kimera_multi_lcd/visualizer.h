@@ -37,6 +37,11 @@ class Visualizer {
                                          VLCFrame* frame2,
                                          const std::vector<unsigned int>& match1,
                                          const std::vector<unsigned int>& match2) = 0;
+
+  virtual void visualizeCandidates(std::string name,
+                                   const RobotPoseId& query_id,
+                                   const std::vector<RobotPoseId>& candidate_ids,
+                                   const std::vector<float>& candidate_scores) = 0;
 };
 
 }  // namespace kimera_multi_lcd
