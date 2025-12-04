@@ -58,11 +58,15 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
     return false;
   }
 
-  int max_possible_match_id =
-      pose_query - params_.local_window_size_ - params_.max_db_results_;
-  if (max_possible_match_id < 0) {
-    max_possible_match_id = 0;
-  }
+  // int max_possible_match_id =
+  //     pose_query - params_.local_window_size_ - params_.max_db_results_;
+
+  // if (max_possible_match_id < 0) {
+  //   max_possible_match_id = 0;
+  // }
+  // if (robot_query != robot) {
+  //   max_possible_match_id = -1;
+  // }
 
   int top_k = params_.max_db_results_ + params_.local_window_size_;
 
@@ -70,8 +74,7 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
   Database::Database::QueryDistances query_distance(top_k,
                                                     std::numeric_limits<float>::max());
 
-  robot_db->search(
-      global_desc, top_k, query_result, query_distance, max_possible_match_id);
+  robot_db->search(global_desc, top_k, query_result, query_distance);
 
   // remove -1 from query_result
   size_t removed_invalid = 0;
@@ -82,12 +85,13 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
       query_result.erase(query_result.begin() + i);
       query_distance.erase(query_distance.begin() + i);
       --i;  // Adjust index after erasure.
-    } else if (query_result[i] >= max_possible_match_id) {
-      removed_recent++;
-      query_result.erase(query_result.begin() + i);
-      query_distance.erase(query_distance.begin() + i);
-      --i;  // Adjust index after erasure.
     }
+    // else if (query_result[i] >= max_possible_match_id) {
+    //   removed_recent++;
+    //   query_result.erase(query_result.begin() + i);
+    //   query_distance.erase(query_distance.begin() + i);
+    //   --i;  // Adjust index after erasure.
+    // }
   }
 
   std::vector<RobotPoseId> query_result_ids;
@@ -101,13 +105,13 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
   }
 
   // if the query result has recent frames, throw error
-  for (const auto& id : query_result) {
-    if (id >= max_possible_match_id) {
-      throw std::runtime_error(
-          "VLADLoopClosureDetector: Query result contains recent frames. "
-          "This should not happen.");
-    }
-  }
+  // for (const auto& id : query_result) {
+  //   if (id >= max_possible_match_id) {
+  //     throw std::runtime_error(
+  //         "VLADLoopClosureDetector: Query result contains recent frames. "
+  //         "This should not happen.");
+  //   }
+  // }
 
   if (query_result.empty()) {
     VLOG(1) << "VLADLoopClosureDetector: No matches found.";
