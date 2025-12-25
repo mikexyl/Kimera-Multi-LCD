@@ -501,7 +501,7 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::recoverPose
 
   // Thresholds for consistency check (can be made configurable)
   const double max_rotation_error = 0.1;  // ~5.7 degrees
-  const double max_translation_error = 2.5;  // 2.5 meters
+  const double max_translation_error = 1.0;  // 2.5 meters
 
   VLOG(1) << "Bidirectional consistency check - rotation error: " << rotation_error
           << " rad, translation error: " << translation_error << " m";
