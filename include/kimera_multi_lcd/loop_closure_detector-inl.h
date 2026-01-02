@@ -7,6 +7,7 @@
  */
 
 #include <glog/logging.h>
+#include <spdlog/fmt/bundled/core.h>
 
 #include <cassert>
 #include <fstream>
@@ -234,6 +235,11 @@ void LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::
     i_query->push_back(match[0].queryIdx);
     i_match->push_back(match[0].trainIdx);
   }
+
+  auto robot_label = fmt::format("{}-{}", vertex_query.first, vertex_match.first);
+
+  visualizer_->visualizeMatchesKeypoints(
+      robot_label + "-glue", &frame_query, &frame_match, *i_query, *i_match);
 }
 
 template <typename Database, typename FeatureDetector, typename FeatureMatcher>
@@ -260,12 +266,7 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::
     match_versors[i] = vlc_frames_[vertex_match].versors_.at(i_match[i]);
   }
 
-  visualizer_->visualizeMatchesVersors(&vlc_frames_[vertex_query],
-                                       &vlc_frames_[vertex_match],
-                                       query_versors,
-                                       match_versors);
-  visualizer_->visualizeMatchesKeypoints(
-      &vlc_frames_[vertex_query], &vlc_frames_[vertex_match], i_query, i_match);
+  auto robot_label = fmt::format("{}-{}", vertex_query.first, vertex_match.first);
 
   VLOG(1) << "Preparing RANSAC with " << query_versors.size() << " correspondences";
 
@@ -332,6 +333,11 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::
       return true;
     }
   }
+  visualizer_->visualizeMatchesKeypoints(robot_label + "-mono",
+                                         &vlc_frames_[vertex_query],
+                                         &vlc_frames_[vertex_match],
+                                         *inlier_query,
+                                         *inlier_match);
   return false;
 }
 

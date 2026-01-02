@@ -66,11 +66,11 @@ struct XfeatNVWrapper : xfeat::XfeatNetVLADONNX {
   }
 
   template <typename... Args>
-  auto distance(Args&&... args) {
+  auto sim(Args&&... args) {
     try {
-      return db_->l2_distance(std::forward<Args>(args)...);
+      return db_->cosine_similarity(std::forward<Args>(args)...);
     } catch (const std::exception& e) {
-      LOG(ERROR) << "Failed to compute distance in database: " << e.what();
+      LOG(ERROR) << "Failed to compute similarity in database: " << e.what();
       throw;
     }
   }
@@ -108,7 +108,7 @@ class VLADLoopClosureDetector : public LoopClosureDetector<XfeatNVWrapper,
   template <typename... Args>
   VLADLoopClosureDetector(Args&&... args)
       : BaseDetector(std::forward<Args>(args)...),
-        env_(Ort::Env(ORT_LOGGING_LEVEL_WARNING, "kimera_multi_lcd")) {}
+        env_(Ort::Env(ORT_LOGGING_LEVEL_ERROR, "kimera_multi_lcd")) {}
 
   /* ------------------------------------------------------------------------
    */
@@ -249,7 +249,8 @@ class VLADLoopClosureDetector : public LoopClosureDetector<XfeatNVWrapper,
 
     //   float max_pixel_error_ratio = 0.05f;
     //   float max_pixel_error =
-    //       max_pixel_error_ratio * std::max(params_.image_width_, params_.image_height_);
+    //       max_pixel_error_ratio * std::max(params_.image_width_,
+    //       params_.image_height_);
 
     //   for (int qi = 0; qi < query_desc.rows; ++qi) {
     //     const cv::Point2f& p_pred = query_proj_pts[qi];

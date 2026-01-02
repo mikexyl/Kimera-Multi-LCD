@@ -236,6 +236,8 @@ struct LcdParams {
   float min_lmk_parallax_ = 20;
   float max_lmk_reproj_error = 36;
 
+  float min_sim_vlad = 0.7f;
+
   bool equals(const LcdParams& other) const {
     return (vocab_path_ == other.vocab_path_ &&
             inter_robot_only_ == other.inter_robot_only_ && alpha_ == other.alpha_ &&

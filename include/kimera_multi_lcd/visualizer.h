@@ -33,7 +33,8 @@ class Visualizer {
    * @param frame2 The second VLCFrame
    * @param matches Vector of pairs (index in frame1, index in frame2)
    */
-  virtual void visualizeMatchesKeypoints(VLCFrame* frame1,
+  virtual void visualizeMatchesKeypoints(const std::string& entity,
+                                         VLCFrame* frame1,
                                          VLCFrame* frame2,
                                          const std::vector<unsigned int>& match1,
                                          const std::vector<unsigned int>& match2) = 0;
