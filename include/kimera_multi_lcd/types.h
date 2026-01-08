@@ -84,6 +84,7 @@ class VLCFrame {
   OrbDescriptorVec descriptors_vec_;
   OrbDescriptor descriptors_mat_;
   gtsam::Pose3 T_submap_pose_;  // 3D pose in submap frame
+  gtsam::Pose3 T_base_cam_;
   void initializeDescriptorsVector();
   void toROSMessage(pose_graph_tools_msgs::VLCFrameMsg* msg) const;
   // void pruneInvalidKeypoints();

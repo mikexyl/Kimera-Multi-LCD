@@ -14,13 +14,22 @@ bool VLADLoopClosureDetector::detectLoopWithRobot(
     const VLADLoopClosureDetector::GlobalDesc& bow_vec,
     std::vector<RobotPoseId>* vertex_matches,
     std::vector<double>* scores) {
+  LOG(INFO) << "VLADLoopClosureDetector: detectLoopWithRobot called for robot " << robot
+            << ", vertex_query=(" << vertex_query.first << "," << vertex_query.second
+            << ").";
   auto query_frame_outside_local_window =
       this->findFirstRobotPoseIdOutsideLocalWindow(vertex_query);
   if (query_frame_outside_local_window and
       this->detectLoopOutsideLocalWindow(
           robot, *query_frame_outside_local_window, bow_vec, vertex_matches, scores)) {
+    LOG(INFO) << "VLADLoopClosureDetector: Loop closures detected with robot " << robot
+              << " for vertex_query=(" << vertex_query.first << ","
+              << vertex_query.second << ").";
     return true;
   } else {
+    LOG(INFO) << "VLADLoopClosureDetector: No loop closures detected with robot "
+              << robot << " for vertex_query=(" << vertex_query.first << ","
+              << vertex_query.second << ").";
     // empty return
     vertex_matches->clear();
     if (scores) {
@@ -38,9 +47,11 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
     std::vector<RobotPoseId>* vertex_matches,
     std::vector<double>* scores) {
   CHECK_NOTNULL(vertex_matches);
-  CHECK(db_.find(robot_pose_id.first) != db_.end())
-      << "VLADLoopClosureDetector: Robot " << robot_pose_id.first
-      << " not found in database.";
+  if (db_.find(robot) == db_.end()) {
+    LOG(WARNING) << "VLADLoopClosureDetector: No database for robot "
+                 << robot << ".";
+    return false;
+  }
 
   RobotId robot_query = robot_pose_id.first;
   PoseId pose_query = robot_pose_id.second;

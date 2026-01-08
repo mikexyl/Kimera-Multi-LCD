@@ -337,7 +337,7 @@ class VLADLoopClosureDetector : public LoopClosureDetector<XfeatNVWrapper,
 
   std::optional<RobotPoseId> findFirstRobotPoseIdOutsideLocalWindow(
       const RobotPoseId& frame_id) const {
-    if (frame_id.second <= static_cast<PoseId>(params_.local_window_size_)) {
+    if (frame_id.second < static_cast<PoseId>(params_.local_window_size_)) {
       return std::nullopt;  // No frames outside the local window.
     } else {
       return std::make_pair(frame_id.first,

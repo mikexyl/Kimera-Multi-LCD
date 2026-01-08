@@ -242,8 +242,8 @@ void LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::
 
   auto robot_label = fmt::format("{}-{}", vertex_query.first, vertex_match.first);
 
-  visualizer_->visualizeMatchesKeypoints(
-      robot_label + "-glue", &frame_query, &frame_match, *i_query, *i_match);
+  // visualizer_->visualizeMatchesKeypoints(
+  // robot_label + "-glue", &frame_query, &frame_match, *i_query, *i_match);
 }
 
 template <typename Database, typename FeatureDetector, typename FeatureMatcher>
@@ -337,11 +337,11 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::
       return true;
     }
   }
-  visualizer_->visualizeMatchesKeypoints(robot_label + "-mono",
-                                         &vlc_frames_[vertex_query],
-                                         &vlc_frames_[vertex_match],
-                                         *inlier_query,
-                                         *inlier_match);
+  // visualizer_->visualizeMatchesKeypoints(robot_label + "-mono",
+  //                                        &vlc_frames_[vertex_query],
+  //                                        &vlc_frames_[vertex_match],
+  //                                        *inlier_query,
+  //                                        *inlier_match);
   return false;
 }
 
@@ -389,7 +389,7 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::recoverPose
   //   return false;
   // }
 
-  AdapterPnp adapter(bearing_vectors_match, points_query);
+  AdapterPnp adapter(bearing_vectors_query, points_match);
   if (R_query_match_prior) {
     // Use input rotation estimate as prior
     adapter.setR(R_query_match_prior->inverse().matrix());
@@ -430,137 +430,97 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::recoverPose
           << " iterations performed: " << ransac_forward.iterations_
           << " inliers found: " << ransac_forward.inliers_.size();
 
-  if (!ransac_forward_success) {
-    return false;
+  gtsam::Pose3 T_mcam_qcam;
+
+  if (ransac_forward_success) {
+    if (ransac_forward.inliers_.size() <
+        params_.geometric_verification_min_inlier_count_) {
+      VLOG(1) << "Number of inlier correspondences after RANSAC (forward) "
+              << ransac_forward.inliers_.size() << " is too low.";
+      return false;
+    }
+
+    double inlier_percentage_forward =
+        static_cast<double>(ransac_forward.inliers_.size()) /
+        bearing_vectors_match.size();
+    if (inlier_percentage_forward <
+        params_.geometric_verification_min_inlier_percentage_) {
+      VLOG(1) << "Percentage of inlier correspondences after RANSAC (forward) "
+              << inlier_percentage_forward << " is too low.";
+      return false;
+    }
+
+    opengv::transformation_t T_forward;
+    ptcloudproblem_ptr->optimizeModelCoefficients(
+        ransac_forward.inliers_, ransac_forward.model_coefficients_, T_forward);
+    gtsam::Matrix T_mat = gtsam::Matrix::Identity(4, 4);
+    T_mat.block<3, 4>(0, 0) = T_forward;
+    T_mcam_qcam = gtsam::Pose3(T_mat);
+  } else {
+    // run backward RANSAC if forward fails
+    VLOG(1) << "Starting Stereo RANSAC (backward)";
+    AdapterPnp adapter_backward(bearing_vectors_match, points_query);
+    if (R_query_match_prior) {
+      // Use input rotation estimate as prior
+      adapter_backward.setR(R_query_match_prior->matrix());
+    }
+    auto pnp_backward_problem_ptr =
+        std::make_shared<ProblemPnP>(adapter_backward, ProblemPnP::EPNP, true);
+    opengv::sac::Ransac<ProblemPnP> ransac_backward;
+    ransac_backward.sac_model_ = pnp_backward_problem_ptr;
+    ransac_backward.max_iterations_ = params_.max_ransac_iterations_;
+    ransac_backward.threshold_ = threshold;
+    ransac_backward.probability_ = 0.99;
+    bool ransac_backward_success = ransac_backward.computeModel();
+    VLOG(1) << "RANSAC result (backward) - success: " << ransac_backward_success
+            << " iterations performed: " << ransac_backward.iterations_
+            << " inliers found: " << ransac_backward.inliers_.size();
+    if (not ransac_backward_success) {
+      return false;
+    }
+    if (ransac_backward.inliers_.size() <
+        params_.geometric_verification_min_inlier_count_) {
+      VLOG(1) << "Number of inlier correspondences after RANSAC (backward) "
+              << ransac_backward.inliers_.size() << " is too low.";
+      return false;
+    }
+    if (static_cast<double>(ransac_backward.inliers_.size()) /
+            bearing_vectors_query.size() <
+        params_.geometric_verification_min_inlier_percentage_) {
+      VLOG(1) << "Percentage of inlier correspondences after RANSAC (backward) "
+              << static_cast<double>(ransac_backward.inliers_.size()) /
+                     bearing_vectors_query.size()
+              << " is too low.";
+      return false;
+    }
+
+    opengv::transformation_t T_backward;
+    pnp_backward_problem_ptr->optimizeModelCoefficients(
+        ransac_backward.inliers_, ransac_backward.model_coefficients_, T_backward);
+    gtsam::Matrix T_mat = gtsam::Matrix::Identity(4, 4);
+    T_mat.block<3, 4>(0, 0) = T_backward;
+    gtsam::Pose3 T_qcam_mcam = gtsam::Pose3(T_mat);
+    T_mcam_qcam = T_qcam_mcam.inverse();
   }
 
-  if (ransac_forward.inliers_.size() <
-      params_.geometric_verification_min_inlier_count_) {
-    VLOG(1) << "Number of inlier correspondences after RANSAC (forward) "
-            << ransac_forward.inliers_.size() << " is too low.";
-    return false;
+  gtsam::Pose3 T_qbody_qcam = vlc_frames_[vertex_query].T_base_cam_;
+  gtsam::Pose3 T_mbody_mcam = vlc_frames_[vertex_match].T_base_cam_;
+
+  // check if T_base_cam_ is identity
+  if (T_qbody_qcam.equals(gtsam::Pose3(), 1e-6)) {
+    LOG(FATAL) << "T_base_cam_ for query frame " << vertex_query.first << ":"
+               << vertex_query.second << " is identity.";
+  }
+  if (T_mbody_mcam.equals(gtsam::Pose3(), 1e-6)) {
+    LOG(FATAL) << "T_base_cam_ for match frame " << vertex_match.first << ":"
+               << vertex_match.second << " is identity.";
   }
 
-  double inlier_percentage_forward =
-      static_cast<double>(ransac_forward.inliers_.size()) /
-      bearing_vectors_match.size();
-  if (inlier_percentage_forward <
-      params_.geometric_verification_min_inlier_percentage_) {
-    VLOG(1) << "Percentage of inlier correspondences after RANSAC (forward) "
-            << inlier_percentage_forward << " is too low.";
-    return false;
-  }
-
-  opengv::transformation_t T_forward;
-  ptcloudproblem_ptr->optimizeModelCoefficients(
-      ransac_forward.inliers_, ransac_forward.model_coefficients_, T_forward);
-
-  // opengv::transformation_t T_forward = ransac_forward.model_coefficients_;
-  gtsam::Pose3 T_query_match_forward((Eigen::MatrixXd(T_forward)));
-
-  // Now run RANSAC in reverse direction: match <- query
-  // VLOG(1) << "Starting Stereo RANSAC (reverse) for bidirectional verification.";
-  // AdapterPnp adapter_reverse(bearing_vectors_query, points_match);
-  // if (R_query_match_prior) {
-  //   // Use inverse rotation estimate as prior for reverse direction
-  //   adapter_reverse.setR(R_query_match_prior->matrix());
-  // }
-
-  // std::shared_ptr<ProblemPnP> ptcloudproblem_reverse_ptr(
-  //     new ProblemPnP(adapter_reverse, ProblemPnP::EPNP, true));
-  // opengv::sac::Ransac<ProblemPnP> ransac_reverse;
-  // ransac_reverse.sac_model_ = ptcloudproblem_reverse_ptr;
-  // ransac_reverse.max_iterations_ = params_.max_ransac_iterations_;
-  // ransac_reverse.threshold_ = threshold;
-  // ransac_reverse.probability_ = 0.99;
-
-  // auto time_ransac_reverse_start = std::chrono::high_resolution_clock::now();
-  // bool ransac_reverse_success = ransac_reverse.computeModel();
-  // auto time_ransac_reverse_end = std::chrono::high_resolution_clock::now();
-  // std::chrono::duration<double> elapsed_ransac_reverse =
-  //     time_ransac_reverse_end - time_ransac_reverse_start;
-  // VLOG(1) << "Stereo RANSAC (reverse) took " << elapsed_ransac_reverse.count() * 1000
-  //         << " ms.";
-  // VLOG(1) << "RANSAC result (reverse) - success: " << ransac_reverse_success
-  //         << " iterations performed: " << ransac_reverse.iterations_
-  //         << " inliers found: " << ransac_reverse.inliers_.size();
-
-  // if (!ransac_reverse_success) {
-  //   VLOG(1) << "Reverse RANSAC failed - rejecting loop closure.";
-  //   return false;
-  // }
-
-  // if (ransac_reverse.inliers_.size() <
-  //     params_.geometric_verification_min_inlier_count_) {
-  //   VLOG(1) << "Number of inlier correspondences after RANSAC (reverse) "
-  //           << ransac_reverse.inliers_.size() << " is too low.";
-  //   return false;
-  // }
-
-  // double inlier_percentage_reverse =
-  //     static_cast<double>(ransac_reverse.inliers_.size()) /
-  //     bearing_vectors_query.size();
-  // if (inlier_percentage_reverse <
-  //     params_.geometric_verification_min_inlier_percentage_) {
-  //   VLOG(1) << "Percentage of inlier correspondences after RANSAC (reverse) "
-  //           << inlier_percentage_reverse << " is too low.";
-  //   return false;
-  // }
-
-  // opengv::transformation_t T_reverse = ransac_reverse.model_coefficients_;
-  // gtsam::Pose3 T_match_query_reverse(
-  //     gtsam::Rot3(T_reverse.block<3, 3>(0, 0)),
-  //     gtsam::Point3(T_reverse(0, 3), T_reverse(1, 3), T_reverse(2, 3)));
-
-  // // Check bidirectional consistency: T_query_match_forward should be inverse of
-  // // T_match_query_reverse
-  // gtsam::Pose3 T_query_match_from_reverse = T_match_query_reverse.inverse();
-  // gtsam::Pose3 T_diff = T_query_match_forward.between(T_query_match_from_reverse);
-
-  // double rotation_error =
-  //     T_diff.rotation().axisAngle().second;  // rotation angle in radians
-  // double translation_error = T_diff.translation().norm();
-
-  // // Thresholds for consistency check (can be made configurable)
-  // const double max_rotation_error = 0.1;     // ~5.7 degrees
-  // const double max_translation_error = 1.0;  // 2.5 meters
-
-  // VLOG(1) << "Bidirectional consistency check - rotation error: " << rotation_error
-  //         << " rad, translation error: " << translation_error << " m";
-
-  // // if (rotation_error > max_rotation_error || translation_error >
-  // // max_translation_error) {
-  // //   LOG(WARNING) << "Bidirectional RANSAC results inconsistent - rotation error: "
-  // //                << rotation_error << " rad (max: " << max_rotation_error
-  // //                << "), translation error: " << translation_error
-  // //                << " m (max: " << max_translation_error << "). Rejecting loop
-  // //                closure.";
-  // //   return false;
-  // // }
-
-  // VLOG(1) << "Bidirectional RANSAC verification passed!";
-
-  // // Average the two transformations for better accuracy
-  // // Convert reverse transformation to same direction as forward
-  // gtsam::Pose3 T_query_match_avg =
-  //     T_query_match_forward.between(T_query_match_from_reverse)
-  //         .expmap(0.5 * T_query_match_forward.between(T_query_match_from_reverse)
-  //                           .logmap(gtsam::Pose3::Identity()));
-
-  // // Alternative: use interpolation on the manifold
-  // // Average rotation using quaternion slerp (approximated via log/exp map)
-  // gtsam::Rot3 R_avg = gtsam::Rot3::Expmap(
-  //     0.5 * (T_query_match_forward.rotation().logmap(gtsam::Rot3::Identity()) +
-  //            T_query_match_from_reverse.rotation().logmap(gtsam::Rot3::Identity())));
-
-  // // Average translation (simple linear average in Euclidean space)
-  // gtsam::Point3 t_avg = 0.5 * (T_query_match_forward.translation() +
-  //                              T_query_match_from_reverse.translation());
+  gtsam::Pose3 T_qbody_mbody =
+      T_qbody_qcam * T_mcam_qcam.inverse() * T_mbody_mcam.inverse();
 
   // Output is the averaged 3D transformation from the match frame to the query frame
-  *T_query_match = T_query_match_forward;
-
-  VLOG(1) << "Using averaged transformation from bidirectional RANSAC.";
+  *T_query_match = T_qbody_mbody;
 
   // Populate inlier indices (use forward direction inliers)
   inlier_query->clear();

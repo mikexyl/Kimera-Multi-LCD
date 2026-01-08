@@ -38,6 +38,14 @@ VLCFrame::VLCFrame(const pose_graph_tools_msgs::VLCFrameMsg& msg)
                                 gtsam::Point3(msg.T_submap_pose.position.x,
                                               msg.T_submap_pose.position.y,
                                               msg.T_submap_pose.position.z));
+  T_base_cam_ = gtsam::Pose3(gtsam::Rot3(msg.T_base_cam.orientation.w,
+                                         msg.T_base_cam.orientation.x,
+                                         msg.T_base_cam.orientation.y,
+                                         msg.T_base_cam.orientation.z),
+                             gtsam::Point3(msg.T_base_cam.position.x,
+                                           msg.T_base_cam.position.y,
+                                           msg.T_base_cam.position.z));
+  CHECK(not T_base_cam_.equals(gtsam::Pose3::Identity(), 1e-6));
   // Convert keypoints
   keypoints_.resize(msg.keypoints.size() / 2);
   for (size_t i = 0; i < keypoints_.size(); ++i) {
@@ -130,12 +138,22 @@ void VLCFrame::toROSMessage(pose_graph_tools_msgs::VLCFrameMsg* msg) const {
   }
 
   // Convert descriptors
-  assert(descriptors_mat_.type() == CV_32FC1);  // check that the matrix is of type CV_32F
+  assert(descriptors_mat_.type() ==
+         CV_32FC1);  // check that the matrix is of type CV_32F
   cv_bridge::CvImage cv_img;
   // cv_img.header   = in_msg->header; // Yulun: need to set header explicitly?
   cv_img.encoding = sensor_msgs::image_encodings::TYPE_32FC1;
   cv_img.image = descriptors_mat_;
   cv_img.toImageMsg(msg->descriptors_mat);
+
+  msg->T_base_cam.position.x = T_base_cam_.translation().x();
+  msg->T_base_cam.position.y = T_base_cam_.translation().y();
+  msg->T_base_cam.position.z = T_base_cam_.translation().z();
+  const gtsam::Quaternion& quat = T_base_cam_.rotation().toQuaternion();
+  msg->T_base_cam.orientation.x = quat.x();
+  msg->T_base_cam.orientation.y = quat.y();
+  msg->T_base_cam.orientation.z = quat.z();
+  msg->T_base_cam.orientation.w = quat.w();
 }
 
 void VLCFrame::initializeDescriptorsVector() {
