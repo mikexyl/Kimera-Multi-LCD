@@ -397,7 +397,7 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::recoverPose
 
   // Should be similar to current klt_eps, but keep it separate.
   const double reprojection_error = params_.ransac_threshold_;
-  const double avg_focal_length = 900.f;
+  const double avg_focal_length = params_.avg_focal_length_;
   const double threshold =
       1.0 - std::cos(std::atan(std::sqrt(2.0) * reprojection_error / avg_focal_length));
 

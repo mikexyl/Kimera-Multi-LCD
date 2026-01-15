@@ -213,6 +213,7 @@ struct LcdParams {
   double ransac_threshold_;
   double geometric_verification_min_inlier_count_;
   double geometric_verification_min_inlier_percentage_;
+  double avg_focal_length_ = 900.0;
 
   // lighterglue parameters
   int lcd_lg_num_features_ = 500;  // num features to track
@@ -255,7 +256,8 @@ struct LcdParams {
             geometric_verification_min_inlier_count_ ==
                 other.geometric_verification_min_inlier_count_ &&
             geometric_verification_min_inlier_percentage_ ==
-                other.geometric_verification_min_inlier_percentage_) &&
+                other.geometric_verification_min_inlier_percentage_ &&
+            avg_focal_length_ == other.avg_focal_length_) &&
            (network_input_width_ == other.network_input_width_) &&
            (network_input_height_ == other.network_input_height_);
   }
