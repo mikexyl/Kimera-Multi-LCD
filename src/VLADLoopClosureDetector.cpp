@@ -48,8 +48,7 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
     std::vector<double>* scores) {
   CHECK_NOTNULL(vertex_matches);
   if (db_.find(robot) == db_.end()) {
-    LOG(WARNING) << "VLADLoopClosureDetector: No database for robot "
-                 << robot << ".";
+    LOG(WARNING) << "VLADLoopClosureDetector: No database for robot " << robot << ".";
     return false;
   }
 
@@ -69,19 +68,38 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
     return false;
   }
 
-  int top_k = params_.max_db_results_ + params_.local_window_size_;
+  int top_k = params_.max_db_results_;
 
   Database::Database::QueryResults query_result(top_k, -1);
   Database::Database::QueryDistances query_distance(top_k,
                                                     std::numeric_limits<float>::max());
 
-  robot_db->search(global_desc, top_k, query_result, query_distance);
+  int max_search_id = -1;
+  size_t num_entries = robot_db->nTotal();
+  if (robot_query == robot) {
+    if (num_entries >
+        static_cast<PoseId>(params_.dist_local_ + params_.local_window_size_)) {
+      max_search_id = num_entries - static_cast<PoseId>(params_.dist_local_) -
+                      params_.local_window_size_;
+    } else {
+      return false;
+    }
+  }
+
+  robot_db->search(global_desc, top_k, query_result, query_distance, max_search_id);
 
   for (size_t i = 0; i < query_result.size(); ++i) {
     if (query_result[i] == -1) {
       query_result.erase(query_result.begin() + i);
       query_distance.erase(query_distance.begin() + i);
       --i;  // Adjust index after erasure.
+    }
+  }
+
+  // check if any result's entry id is larger than max_search_id
+  for (const auto& id : query_result) {
+    if (max_search_id > 0) {
+      CHECK_LT(id, max_search_id);
     }
   }
 
@@ -135,7 +153,7 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
       vertex_matches->push_back(std::make_pair(robot, best_match_pose_id));
       if (scores) scores->push_back(best_result.Score);
     } else {
-      LOG(FATAL) << "intra-robot loop disabled for now";
+      // LOG(FATAL) << "intra-robot loop disabled for now";
       // Check dist_local param
       int pose_query_int = (int)pose_query;
       int pose_match_int = (int)best_match_pose_id;
@@ -149,42 +167,11 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
                   << " < " << params_.dist_local_ << ")";
         return false;
       }
-      // Compute islands in the matches.
-      // An island is a group of matches with close frame_ids.
-      std::vector<MatchIsland> islands;
-      lcd_tp_wrapper_->computeIslands(&dbow_query_result, &islands);
 
-      LOG(INFO) << "Computed islands: count=" << islands.size();
-
-      if (!islands.empty()) {
-        // Check for temporal constraint if it is an single robot lc
-        // Find the best island grouping using MatchIsland sorting.
-        const MatchIsland& best_island =
-            *std::max_element(islands.begin(), islands.end());
-
-        LOG(INFO) << "Best island: best_score=" << best_island.best_score_
-                  << ", island_score=" << best_island.island_score_
-                  << ", size=" << best_island.size() << ", range=["
-                  << best_island.start_id_ << "," << best_island.end_id_ << "]";
-
-        // Run temporal constraint check on this best island.
-        bool pass_temporal_constraint =
-            lcd_tp_wrapper_->checkTemporalConstraint(pose_query, best_island);
-
-        LOG(INFO) << "Temporal constraint check: "
-                  << (pass_temporal_constraint ? "PASSED" : "FAILED");
-
-        if (pass_temporal_constraint) {
-          LOG(INFO) << "Same-robot loop closure detected: " << robot_query << ":"
-                    << pose_query << " <-> " << robot << ":" << best_match_pose_id;
-          vertex_matches->push_back(std::make_pair(robot, best_match_pose_id));
-          if (scores) scores->push_back(best_result.Score);
-        } else {
-          LOG(INFO) << "CONDITION FAILED: Temporal constraint not satisfied.";
-        }
-      } else {
-        LOG(INFO) << "CONDITION FAILED: No islands computed from matches.";
-      }
+      LOG(INFO) << "Same-robot loop closure detected: " << robot_query << ":"
+                << pose_query << " <-> " << robot << ":" << best_match_pose_id;
+      vertex_matches->push_back(std::make_pair(robot, best_match_pose_id));
+      if (scores) scores->push_back(best_result.Score);
     }
   } else {
     LOG(INFO) << "No valid DBoW query results after conversion.";
