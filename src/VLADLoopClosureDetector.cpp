@@ -14,22 +14,15 @@ bool VLADLoopClosureDetector::detectLoopWithRobot(
     const VLADLoopClosureDetector::GlobalDesc& bow_vec,
     std::vector<RobotPoseId>* vertex_matches,
     std::vector<double>* scores) {
-  LOG(INFO) << "VLADLoopClosureDetector: detectLoopWithRobot called for robot " << robot
-            << ", vertex_query=(" << vertex_query.first << "," << vertex_query.second
-            << ").";
   auto query_frame_outside_local_window =
       this->findFirstRobotPoseIdOutsideLocalWindow(vertex_query);
   if (query_frame_outside_local_window and
       this->detectLoopOutsideLocalWindow(
           robot, *query_frame_outside_local_window, bow_vec, vertex_matches, scores)) {
-    LOG(INFO) << "VLADLoopClosureDetector: Loop closures detected with robot " << robot
-              << " for vertex_query=(" << vertex_query.first << ","
-              << vertex_query.second << ").";
+    LOG(INFO) << "LCD: VPR detected with robot " << robot << " for vertex_query=("
+              << vertex_query.first << "," << vertex_query.second << ").";
     return true;
   } else {
-    LOG(INFO) << "VLADLoopClosureDetector: No loop closures detected with robot "
-              << robot << " for vertex_query=(" << vertex_query.first << ","
-              << vertex_query.second << ").";
     // empty return
     vertex_matches->clear();
     if (scores) {
