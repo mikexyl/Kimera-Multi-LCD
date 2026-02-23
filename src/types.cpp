@@ -53,8 +53,6 @@ VLCFrame::VLCFrame(const pose_graph_tools_msgs::VLCFrameMsg& msg)
     keypoints_[i].y = msg.keypoints[2 * i + 1];
   }
 
-  CHECK(keypoints_.size()) << " No keypoints in VLCFrame message!";
-
   // Convert versors and 3D keypoints
   if (!msg.versors.data.empty()) {
     pcl::PointCloud<pcl::PointXYZ> versors;

@@ -7,6 +7,7 @@
 #include "kimera_multi_lcd/utils.h"
 
 #include <fstream>
+#include <ros/serialization.h>
 
 namespace kimera_multi_lcd {
 
@@ -91,25 +92,11 @@ void VLCEdgeFromMsg(const pose_graph_tools_msgs::PoseGraphEdge& msg, VLCEdge* ed
 }
 
 size_t computeBowQueryPayloadBytes(const pose_graph_tools_msgs::BowQuery& msg) {
-  size_t bytes = 0;
-  bytes += sizeof(msg.robot_id);
-  bytes += sizeof(msg.pose_id);
-  bytes += sizeof(msg.bow_vector.word_ids[0]) * msg.bow_vector.word_ids.size();
-  bytes += sizeof(msg.bow_vector.word_values[0]) * msg.bow_vector.word_values.size();
-  return bytes;
+  return ros::serialization::serializationLength(msg);
 }
 
 size_t computeVLCFramePayloadBytes(const pose_graph_tools_msgs::VLCFrameMsg& msg) {
-  size_t bytes = 0;
-  bytes += sizeof(msg.robot_id);
-  bytes += sizeof(msg.pose_id);
-  // descriptors
-  bytes += sizeof(msg.descriptors_mat);
-  bytes += sizeof(msg.descriptors_mat.data[0]) * msg.descriptors_mat.data.size();
-  // keypoints
-  bytes += sizeof(msg.versors);
-  bytes += sizeof(msg.versors.data[0]) * msg.versors.data.size();
-  return bytes;
+  return ros::serialization::serializationLength(msg);
 }
 
 }  // namespace kimera_multi_lcd
