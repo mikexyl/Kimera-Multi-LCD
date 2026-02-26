@@ -76,13 +76,16 @@ VLCFrame::VLCFrame(const pose_graph_tools_msgs::VLCFrameMsg& msg)
     ROS_WARN("[VLCFrame] Empty versors!");
   }
 
-  // Convert descriptors
+  // Convert descriptors (FP16 -> FP32)
   try {
     sensor_msgs::ImageConstPtr ros_image_ptr(
         new sensor_msgs::Image(msg.descriptors_mat));
-    descriptors_mat_ =
-        cv_bridge::toCvCopy(ros_image_ptr, sensor_msgs::image_encodings::TYPE_32FC1)
+    cv::Mat descriptors_raw =
+        cv_bridge::toCvCopy(ros_image_ptr, sensor_msgs::image_encodings::TYPE_16UC1)
             ->image;
+    // Reinterpret raw 16-bit values as FP16, then convert to FP32
+    cv::Mat(descriptors_raw.rows, descriptors_raw.cols, CV_16F, descriptors_raw.data)
+        .convertTo(descriptors_mat_, CV_32F);
     initializeDescriptorsVector();
   } catch (...) {
     ROS_WARN("[VLCFrame] Failed to read descriptors!");
@@ -135,13 +138,16 @@ void VLCFrame::toROSMessage(pose_graph_tools_msgs::VLCFrameMsg* msg) const {
     msg->keypoints[2 * i + 1] = keypoints_[i].y;
   }
 
-  // Convert descriptors
+  // Convert descriptors (FP32 -> FP16 for bandwidth reduction)
   assert(descriptors_mat_.type() ==
          CV_32FC1);  // check that the matrix is of type CV_32F
+  cv::Mat descriptors_fp16;
+  descriptors_mat_.convertTo(descriptors_fp16, CV_16F);
   cv_bridge::CvImage cv_img;
-  // cv_img.header   = in_msg->header; // Yulun: need to set header explicitly?
-  cv_img.encoding = sensor_msgs::image_encodings::TYPE_32FC1;
-  cv_img.image = descriptors_mat_;
+  // Transport as 16UC1 (same 16-bit element size; bits are FP16)
+  cv_img.encoding = sensor_msgs::image_encodings::TYPE_16UC1;
+  cv_img.image = cv::Mat(descriptors_fp16.rows, descriptors_fp16.cols,
+                         CV_16UC1, descriptors_fp16.data);
   cv_img.toImageMsg(msg->descriptors_mat);
 
   msg->T_base_cam.position.x = T_base_cam_.translation().x();

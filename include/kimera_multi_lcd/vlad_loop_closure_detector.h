@@ -3,14 +3,12 @@
 #include <xfeat-cpp/faiss_database.h>
 #include <xfeat-cpp/lighterglue_cv.h>
 #include <xfeat-cpp/xfeat_cv.h>
-#include <xfeat-cpp/xfeat_netvlad_onnx.h>
 
 #include "kimera_multi_lcd/loop_closure_detector.h"
 
 namespace kimera_multi_lcd {
 
-struct XfeatNVWrapper : xfeat::XfeatNetVLADONNX {
-  using Base = xfeat::XfeatNetVLADONNX;
+struct FaissWrapper {
   using GlobalDesc = cv::Mat;
   using Desc = cv::Mat;
   using DescVector = std::vector<cv::Mat>;
@@ -18,24 +16,10 @@ struct XfeatNVWrapper : xfeat::XfeatNetVLADONNX {
   using Database = xfeat::FaissDatabase;
 
   template <typename... Args>
-  XfeatNVWrapper(std::unique_ptr<Database> faiss_db, Args&&... args)
-      : Base(std::forward<Args>(args)...), db_(std::move(faiss_db)) {}
+  FaissWrapper(std::unique_ptr<Database> faiss_db) : db_(std::move(faiss_db)) {}
 
   void transform(const DescVector& desc_vec, GlobalDesc& global_desc) {
-    CHECK(desc_vec.size() == 2) << "XfeatNVWrapper: the feature vector must be "
-                                   "the vector of [M1, x_prep]";
-
-    auto M1 = desc_vec[0];
-    auto x_prep = desc_vec[1];
-
-    if (M1.empty()) throw std::runtime_error("XfeatNVWrapper: M1 is empty");
-    if (x_prep.empty()) throw std::runtime_error("XfeatNVWrapper: x_prep is empty");
-
-    if (M1.type() != CV_32F || x_prep.type() != CV_32F) {
-      throw std::runtime_error("XfeatNVWrapper: M1 and x_prep must be of type CV_32F");
-    }
-
-    global_desc = Base::transform(M1, x_prep);
+    LOG(FATAL) << "shouldn't be called!";
   }
 
   auto add(const GlobalDesc& global_desc) {
@@ -95,13 +79,13 @@ class DummyFeatureDetector : cv::FeatureDetector {
                        cv::OutputArrayOfArrays) final {}
 };
 
-class VLADLoopClosureDetector : public LoopClosureDetector<XfeatNVWrapper,
+class VLADLoopClosureDetector : public LoopClosureDetector<FaissWrapper,
                                                            DummyFeatureDetector,
                                                            xfeat::LighterGlueCV> {
  public:
-  using Database = XfeatNVWrapper;
+  using Database = FaissWrapper;
   using BaseDetector =
-      LoopClosureDetector<XfeatNVWrapper, DummyFeatureDetector, xfeat::LighterGlueCV>;
+      LoopClosureDetector<FaissWrapper, DummyFeatureDetector, xfeat::LighterGlueCV>;
 
   static constexpr bool kVLADLCDUseGPU = true;
 
@@ -147,13 +131,7 @@ class VLADLoopClosureDetector : public LoopClosureDetector<XfeatNVWrapper,
     auto faiss_db = std::make_unique<Database::Database>(
         faiss_mode, params_.lcd_faiss_index_path_, false, faiss_dim);
     // faiss_db.
-    return std::make_unique<Database>(std::move(faiss_db),
-                                      env_,
-                                      params_.xfeat_nv_head_model_path_,
-                                      params_.netvlad_model_path_,
-                                      kVLADLCDUseGPU,
-                                      params_.network_input_height_ / 16,
-                                      params_.network_input_width_ / 16);
+    return std::make_unique<Database>(std::move(faiss_db));
   }
 
   void matchFeatures(const std::vector<cv::Point2f>& query_kpts,

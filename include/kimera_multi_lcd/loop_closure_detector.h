@@ -14,7 +14,6 @@
 #include <kimera_multi_lcd/types.h>
 #include <ros/ros.h>
 #include <ros/time.h>
-#include <xfeat-cpp/netvlad_onnx.h>
 
 #include <iostream>
 #include <map>
