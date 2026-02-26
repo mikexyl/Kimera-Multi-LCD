@@ -99,4 +99,8 @@ size_t computeVLCFramePayloadBytes(const pose_graph_tools_msgs::VLCFrameMsg& msg
   return ros::serialization::serializationLength(msg);
 }
 
+size_t computeVLCFrameDescriptorBytes(const pose_graph_tools_msgs::VLCFrameMsg& msg) {
+  return msg.descriptors_mat.data.size();
+}
+
 }  // namespace kimera_multi_lcd

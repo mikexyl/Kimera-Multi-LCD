@@ -39,4 +39,7 @@ size_t computeBowQueryPayloadBytes(const pose_graph_tools_msgs::BowQuery& msg);
 // Compute the payload size of a VLC frame
 size_t computeVLCFramePayloadBytes(const pose_graph_tools_msgs::VLCFrameMsg& msg);
 
+// Compute the bytes used by descriptor data within a VLC frame
+size_t computeVLCFrameDescriptorBytes(const pose_graph_tools_msgs::VLCFrameMsg& msg);
+
 }  // namespace kimera_multi_lcd

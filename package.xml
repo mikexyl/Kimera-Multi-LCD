@@ -31,5 +31,6 @@
   <depend>rosunit</depend>
   <depend>rostest</depend>
   <depend>xfeat-cpp</depend>
+  <depend>opengv_catkin</depend>
 
 </package>
