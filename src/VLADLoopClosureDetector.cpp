@@ -1,5 +1,7 @@
 #include <glog/logging.h>
 
+#include <algorithm>
+
 #include "kimera_multi_lcd/vlad_loop_closure_detector.h"
 
 namespace kimera_multi_lcd {
@@ -49,8 +51,9 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
   PoseId pose_query = robot_pose_id.second;
   auto robot_db = db_.at(robot).get();
 
-  CHECK(!global_desc.empty()) << "VLADLoopClosureDetector: Global descriptor for pose "
-                              << robot_query << ":" << pose_query << " is empty.";
+  CHECK(!global_desc.descriptor.empty())
+      << "VLADLoopClosureDetector: Global descriptor for pose " << robot_query << ":"
+      << pose_query << " is empty.";
 
   if (params_.inter_robot_only_ && robot_query == robot) return false;
 
@@ -79,10 +82,11 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
     }
   }
 
-  robot_db->search(global_desc, top_k, query_result, query_distance, max_search_id);
+  robot_db->search(
+      global_desc.descriptor, top_k, query_result, query_distance, max_search_id);
 
   for (size_t i = 0; i < query_result.size(); ++i) {
-    if (query_result[i] == -1) {
+    if (query_result[i] == -1 || query_distance[i] < params_.min_sim_vlad) {
       query_result.erase(query_result.begin() + i);
       query_distance.erase(query_distance.begin() + i);
       --i;  // Adjust index after erasure.
@@ -115,13 +119,24 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
       [&](Database::Database::QueryResults& query_result,
           Database::Database::QueryDistances& query_distance) -> DBoW2::QueryResults {
     DBoW2::QueryResults dbow_query_result;
+    std::stringstream ss;
+    ss << "DLCD: cand scores: \n";
     for (size_t i = 0; i < query_result.size(); ++i) {
       float score = query_distance[i];
+      ss << score;
+      if (i < global_desc.scores.size()) {
+        score *= global_desc.scores[i];
+        ss << " " << global_desc.scores[i];
+      }
+      ss << " total: " << score << "\n";
+      CHECK_GT(score, 0.0f) << "VLADLoopClosureDetector: Score must be positive.";
+
       DBoW2::Result result;
       result.Id = query_result[i];
       result.Score = score;
       dbow_query_result.push_back(result);
     }
+    LOG(INFO) << ss.str();
     return dbow_query_result;
   };
 
@@ -131,12 +146,14 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
   auto dbow_query_result = faiss_to_dbow_queryresults(query_result, query_distance);
 
   if (!dbow_query_result.empty()) {
-    // Select best result from the raw query results.
-    DBoW2::Result best_result = dbow_query_result[0];
-    if (best_result.Score < params_.min_sim_vlad) {
-      VLOG(1) << "VLADLoopClosureDetector: Best VLAD match below min_sim_vlad.";
-      return false;
-    }
+    // Select the result with the highest combined score.
+    DBoW2::Result best_result =
+        *std::max_element(dbow_query_result.begin(),
+                          dbow_query_result.end(),
+                          [](const DBoW2::Result& a, const DBoW2::Result& b) {
+                            return a.Score < b.Score;
+                          });
+    LOG(INFO) << "Best score: " << best_result.Score;
 
     const PoseId best_match_pose_id = db_EntryId_to_PoseId_[robot][best_result.Id];
 

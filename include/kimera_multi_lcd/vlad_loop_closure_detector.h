@@ -8,8 +8,13 @@
 
 namespace kimera_multi_lcd {
 
+struct GlobalDescWithScores {
+  cv::Mat descriptor;
+  std::vector<float> scores;
+};
+
 struct FaissWrapper {
-  using GlobalDesc = cv::Mat;
+  using GlobalDesc = GlobalDescWithScores;
   using Desc = cv::Mat;
   using DescVector = std::vector<cv::Mat>;
   using DescMat = cv::Mat;
@@ -24,9 +29,9 @@ struct FaissWrapper {
 
   auto add(const GlobalDesc& global_desc) {
     CHECK_NOTNULL(db_);
-    CHECK(not global_desc.empty());
+    CHECK(not global_desc.descriptor.empty());
     try {
-      return db_->add(global_desc);
+      return db_->add(global_desc.descriptor);
     } catch (const std::exception& e) {
       LOG(ERROR) << "Failed to add to database: " << e.what();
       throw;
