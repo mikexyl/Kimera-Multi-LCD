@@ -124,7 +124,7 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
     for (size_t i = 0; i < query_result.size(); ++i) {
       float score = query_distance[i];
       ss << score;
-      if (i < global_desc.scores.size()) {
+      if (params_.use_score_combination && i < global_desc.scores.size()) {
         score *= global_desc.scores[i];
         ss << " " << global_desc.scores[i];
       }

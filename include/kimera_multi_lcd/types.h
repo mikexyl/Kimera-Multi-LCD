@@ -239,6 +239,7 @@ struct LcdParams {
   float max_lmk_reproj_error = 36;
 
   float min_sim_vlad = 0.7f;
+  bool use_score_combination = true;  // multiply FAISS distance by per-candidate scores
 
   bool equals(const LcdParams& other) const {
     return (vocab_path_ == other.vocab_path_ &&
