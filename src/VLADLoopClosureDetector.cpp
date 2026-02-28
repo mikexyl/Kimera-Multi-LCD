@@ -67,8 +67,8 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
   int top_k = params_.max_db_results_;
 
   Database::Database::QueryResults query_result(top_k, -1);
-  Database::Database::QueryDistances query_distance(top_k,
-                                                    std::numeric_limits<float>::max());
+  Database::Database::QueryDistances query_similarity(top_k,
+                                                       std::numeric_limits<float>::lowest());
 
   int max_search_id = -1;
   size_t num_entries = robot_db->nTotal();
@@ -83,12 +83,12 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
   }
 
   robot_db->search(
-      global_desc.descriptor, top_k, query_result, query_distance, max_search_id);
+      global_desc.descriptor, top_k, query_result, query_similarity, max_search_id);
 
   for (size_t i = 0; i < query_result.size(); ++i) {
-    if (query_result[i] == -1 || query_distance[i] < params_.min_sim_vlad) {
+    if (query_result[i] == -1 || query_similarity[i] < params_.min_sim_vlad) {
       query_result.erase(query_result.begin() + i);
-      query_distance.erase(query_distance.begin() + i);
+      query_similarity.erase(query_similarity.begin() + i);
       --i;  // Adjust index after erasure.
     }
   }
@@ -107,7 +107,7 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
 
   if (visualizer_) {
     visualizer_->visualizeCandidates(
-        "lcd/raw_vlad", robot_pose_id, query_result_ids, query_distance);
+        "lcd/raw_vlad", robot_pose_id, query_result_ids, query_similarity);
   }
 
   if (query_result.empty()) {
@@ -117,12 +117,13 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
 
   auto faiss_to_dbow_queryresults =
       [&](Database::Database::QueryResults& query_result,
-          Database::Database::QueryDistances& query_distance) -> DBoW2::QueryResults {
+          Database::Database::QueryDistances& query_similarity) -> DBoW2::QueryResults {
     DBoW2::QueryResults dbow_query_result;
     std::stringstream ss;
     ss << "DLCD: cand scores: \n";
     for (size_t i = 0; i < query_result.size(); ++i) {
-      float score = query_distance[i];
+      // float score = query_similarity[i];
+      float score = params_.use_score_combination ? 1.0f : query_similarity[i];
       ss << score;
       if (params_.use_score_combination && i < global_desc.scores.size()) {
         score *= global_desc.scores[i];
@@ -143,7 +144,7 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
   VLOG_IF(1, query_result.empty())
       << "VLADLoopClosureDetector: No matches found after applying nss threshold.";
 
-  auto dbow_query_result = faiss_to_dbow_queryresults(query_result, query_distance);
+  auto dbow_query_result = faiss_to_dbow_queryresults(query_result, query_similarity);
 
   if (!dbow_query_result.empty()) {
     // Select the result with the highest combined score.
