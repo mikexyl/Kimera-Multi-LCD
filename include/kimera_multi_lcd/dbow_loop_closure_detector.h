@@ -14,7 +14,7 @@ class DBoWLoopClosureDetector
     // Skip if this BoW vector has been added
     if (globalDescExists(id)) return;
     if (db_.find(robot_id) == db_.end()) {
-      db_[robot_id] = createDatabase();
+      db_[robot_id] = createDatabase(0);
       global_descs_[robot_id] = PoseGlobalDesc();
       db_EntryId_to_PoseId_[robot_id] = std::unordered_map<size_t, PoseId>();
       global_desc_latest_pose_id_[robot_id] = pose_id;

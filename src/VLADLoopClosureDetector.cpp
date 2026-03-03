@@ -67,8 +67,8 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
   int top_k = params_.max_db_results_;
 
   Database::Database::QueryResults query_result(top_k, -1);
-  Database::Database::QueryDistances query_similarity(top_k,
-                                                       std::numeric_limits<float>::lowest());
+  Database::Database::QueryDistances query_similarity(
+      top_k, std::numeric_limits<float>::lowest());
 
   int max_search_id = -1;
   size_t num_entries = robot_db->nTotal();
@@ -125,11 +125,16 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
       // float score = query_similarity[i];
       float score = params_.use_score_combination ? 1.0f : query_similarity[i];
       ss << score;
-      if (params_.use_score_combination && i < global_desc.scores.size()) {
-        score *= global_desc.scores[i];
-        ss << " " << global_desc.scores[i];
+      if (params_.use_score_combination) {
+        auto scores = global_descs_.at(robot)
+                          .at(db_EntryId_to_PoseId_[robot][query_result[i]])
+                          .scores;
+        for (size_t iscore = 0; iscore < scores.size(); ++iscore) {
+          score *= scores[iscore];
+          ss << " " << scores[iscore];
+        }
+        ss << " total: " << score << "\n";
       }
-      ss << " total: " << score << "\n";
       CHECK_GT(score, 0.0f) << "VLADLoopClosureDetector: Score must be positive.";
 
       DBoW2::Result result;

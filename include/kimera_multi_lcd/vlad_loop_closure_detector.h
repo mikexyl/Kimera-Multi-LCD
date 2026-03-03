@@ -125,17 +125,16 @@ class VLADLoopClosureDetector : public LoopClosureDetector<FaissWrapper,
     LOG(INFO) << "VLADLoopClosureDetector initialized.";
   }
 
-  virtual std::unique_ptr<Database> createDatabase() override {
-    LOG(INFO) << "Creating FAISS database";
+  virtual std::unique_ptr<Database> createDatabase(int dim) override {
+    LOG(INFO) << "Creating FAISS database with dim=" << dim;
     auto faiss_mode = Database::Database::IndexMode::kIVFFlat;
     int faiss_dim = 0;
     if (params_.lcd_faiss_index_path_.empty()) {
       faiss_mode = Database::Database::IndexMode::kFlat;
-      faiss_dim = 512;
+      faiss_dim = dim;
     }
     auto faiss_db = std::make_unique<Database::Database>(
         faiss_mode, params_.lcd_faiss_index_path_, false, faiss_dim);
-    // faiss_db.
     return std::make_unique<Database>(std::move(faiss_db));
   }
 
@@ -187,93 +186,6 @@ class VLADLoopClosureDetector : public LoopClosureDetector<FaissWrapper,
     for (const auto& match : lg_matches) {
       matches.push_back(DMatchVec(1, match));
     }
-
-    // // cv::findHomography()
-    // std::vector<cv::Point2f> query_matched_kpts, train_matched_kpts;
-    // for (const auto& match : lg_matches) {
-    //   query_matched_kpts.push_back(query_kpts[match.queryIdx]);
-    //   train_matched_kpts.push_back(train_kpts[match.trainIdx]);
-    // }
-
-    // cv::Mat inlier_mask;
-    // cv::Mat H_lg;
-    // if (lg_matches.size() >= 4) {
-    //   H_lg = cv::findHomography(
-    //       query_matched_kpts, train_matched_kpts, cv::RANSAC, 5, inlier_mask);
-
-    //   if (H_lg.empty() or cv::countNonZero(inlier_mask) < 4) {
-    //     matches.clear();
-    //     return;
-    //   }
-
-    //   double detH = cv::determinant(H_lg);
-    //   double normH = cv::norm(H_lg);
-
-    //   LOG(INFO) << "det(H) = " << detH << ", norm(H) = " << normH;
-
-    //   if (std::abs(detH) < 1e-6 || normH > 1e6) {
-    //     matches.clear();
-    //     return;
-    //   }
-
-    //   // 1. Collect ALL query points (not only matched ones)
-    //   std::vector<cv::Point2f> query_pts;
-    //   query_pts.reserve(query_kpts.size());
-    //   for (const auto& p : query_kpts) {
-    //     query_pts.push_back(p);  // or p.pt if query_kpts is KeyPoint
-    //   }
-
-    //   // 2. Project them using H_lg
-    //   std::vector<cv::Point2f> query_proj_pts;
-    //   cv::perspectiveTransform(query_pts, query_proj_pts, H_lg);
-
-    //   // 3. Build full mask: rows = all query desc, cols = all train desc
-    //   cv::Mat search_mask = cv::Mat::zeros(query_desc.rows, train_desc.rows, CV_8U);
-
-    //   float max_pixel_error_ratio = 0.05f;
-    //   float max_pixel_error =
-    //       max_pixel_error_ratio * std::max(params_.image_width_,
-    //       params_.image_height_);
-
-    //   for (int qi = 0; qi < query_desc.rows; ++qi) {
-    //     const cv::Point2f& p_pred = query_proj_pts[qi];
-
-    //     for (int ti = 0; ti < train_desc.rows; ++ti) {
-    //       const cv::Point2f& p2 = train_kpts[ti];
-    //       float dx = std::abs(p2.x - p_pred.x);
-    //       float dy = std::abs(p2.y - p_pred.y);
-
-    //       if (dx < max_pixel_error && dy < max_pixel_error) {
-    //         search_mask.at<uchar>(qi, ti) = 1;
-    //       }
-    //     }
-    //   }
-
-    //   cv::BFMatcher bf_matcher(cv::NORM_L2, /*crossCheck=*/false);
-    //   std::vector<std::vector<cv::DMatch>> knn_matches;
-    //   lg_matches.clear();
-    //   CHECK(bf_matcher.isMaskSupported());
-    //   bf_matcher.knnMatch(query_desc, train_desc, knn_matches, 1, search_mask);
-
-    //   // apply a distance threshold to filter matches
-    //   const float max_desc_distance = 0.7f;
-    //   std::vector<DMatchVec> filtered_matches(knn_matches.size());
-    //   for (const auto& knn_match : knn_matches) {
-    //     for (const auto& m : knn_match) {
-    //       CHECK(search_mask.at<uchar>(m.queryIdx, m.trainIdx) == 1);
-    //       if (m.distance < max_desc_distance) {
-    //         filtered_matches[m.queryIdx].push_back(m);
-    //       }
-    //     }
-    //   }
-    //   matches = filtered_matches;
-    //   return;
-    // }
-    // // convert to knn result format
-    // matches.clear();
-    // for (const auto& match : lg_matches) {
-    //   matches.push_back(DMatchVec(1, match));
-    // }
   }
 
   // Disambiguate overloaded templated base methods by providing an explicit
@@ -286,7 +198,7 @@ class VLADLoopClosureDetector : public LoopClosureDetector<FaissWrapper,
     // Skip if this BoW vector has been added
     if (globalDescExists(id)) return;
     if (db_.find(robot_id) == db_.end()) {
-      db_[robot_id] = createDatabase();
+      db_[robot_id] = createDatabase(bow_vector.descriptor.cols);
       global_descs_[robot_id] = PoseGlobalDesc();
       db_EntryId_to_PoseId_[robot_id] = std::unordered_map<size_t, PoseId>();
       global_desc_latest_pose_id_[robot_id] = pose_id;

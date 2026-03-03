@@ -72,7 +72,7 @@ class LoopClosureDetector : public LoopClosureDetectorBase {
   LoopClosureDetector();
   ~LoopClosureDetector();
 
-  virtual std::unique_ptr<Database> createDatabase() {
+  virtual std::unique_ptr<Database> createDatabase(int dim) {
     LOG(ERROR) << "createDatabase not implemented!" << std::endl;
     return nullptr;
   }
