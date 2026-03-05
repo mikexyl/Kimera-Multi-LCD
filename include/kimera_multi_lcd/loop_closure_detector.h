@@ -99,7 +99,8 @@ class LoopClosureDetector : public LoopClosureDetectorBase {
                                    const RobotPoseId& vertex_query,
                                    const GlobalDesc& bow_vector_query,
                                    std::vector<RobotPoseId>* vertex_matches,
-                                   std::vector<double>* scores = nullptr) = 0;
+                                   std::vector<double>* scores = nullptr,
+                                   uint64_t time_since_last_loop = 0) = 0;
 
   /**
    * @brief Find loop closure against all robots in the database
@@ -110,10 +111,12 @@ class LoopClosureDetector : public LoopClosureDetectorBase {
    * score (BoW score / nss_factor)
    * @return
    */
-  bool detectLoop(const RobotPoseId& vertex_query,
-                  const GlobalDesc& bow_vector_query,
-                  std::vector<RobotPoseId>* vertex_matches,
-                  std::vector<double>* scores = nullptr);
+  bool detectLoop(
+      const RobotPoseId& vertex_query,
+      const GlobalDesc& bow_vector_query,
+      std::vector<RobotPoseId>* vertex_matches,
+      std::vector<double>* scores = nullptr,
+      std::unordered_map<RobotId, uint64_t> time_since_last_loop_per_robot = {});
 
   void computeMatchedIndices(const RobotPoseId& vertex_query,
                              const RobotPoseId& vertex_match,

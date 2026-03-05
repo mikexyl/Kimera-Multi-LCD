@@ -222,13 +222,15 @@ class VLADLoopClosureDetector : public LoopClosureDetector<FaissWrapper,
                            const RobotPoseId& vertex_query,
                            const GlobalDesc& bow_vector_query,
                            std::vector<RobotPoseId>* vertex_matches,
-                           std::vector<double>* scores = nullptr) override;
+                           std::vector<double>* scores = nullptr,
+                           uint64_t time_since_last_loop = 0) override;
 
   bool detectLoopOutsideLocalWindow(size_t robot,
                                     const RobotPoseId& frame_id,
                                     const Database::GlobalDesc& bow_vec,
                                     std::vector<RobotPoseId>* vertex_matches,
-                                    std::vector<double>* scores = nullptr);
+                                    std::vector<double>* scores = nullptr,
+                                    uint64_t time_since_last_loop = 0);
 
   std::optional<RobotPoseId> findFirstRobotPoseIdOutsideLocalWindow(
       const RobotPoseId& frame_id) const {

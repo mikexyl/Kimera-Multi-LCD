@@ -57,7 +57,8 @@ class DBoWLoopClosureDetector
                            const RobotPoseId& vertex_query,
                            const GlobalDesc& bow_vector_query,
                            std::vector<RobotPoseId>* vertex_matches,
-                           std::vector<double>* scores) override {
+                           std::vector<double>* scores,
+                           uint64_t /*time_since_last_loop*/ = 0) override {
     assert(NULL != vertex_matches);
     vertex_matches->clear();
     if (scores) scores->clear();

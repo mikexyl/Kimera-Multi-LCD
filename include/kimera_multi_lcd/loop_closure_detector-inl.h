@@ -144,7 +144,8 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::detectLoop(
     const RobotPoseId& vertex_query,
     const GlobalDesc& bow_vector_query,
     std::vector<RobotPoseId>* vertex_matches,
-    std::vector<double>* scores) {
+    std::vector<double>* scores,
+    std::unordered_map<RobotId, uint64_t> time_since_last_loop_per_robot) {
   assert(NULL != vertex_matches);
   vertex_matches->clear();
   if (scores) scores->clear();
@@ -156,7 +157,8 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::detectLoop(
                             vertex_query,
                             bow_vector_query,
                             &vertex_matches_with_robot,
-                            &scores_with_robot)) {
+                            &scores_with_robot,
+                            time_since_last_loop_per_robot[db.first])) {
       vertex_matches->insert(vertex_matches->end(),
                              vertex_matches_with_robot.begin(),
                              vertex_matches_with_robot.end());

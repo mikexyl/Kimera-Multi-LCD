@@ -10,17 +10,34 @@ DEFINE_double(max_nss_vlad_distance,
               0.999,  // turn this off for now
               "Maximum NSS distance for VLAD loop closure detection.");
 
+inline float tauAdaptiveScoring(float tau_min,
+                                float tau_max,
+                                float lambda,
+                                float seconds) {
+  // Exponential decay from tau_max to tau_min with time constant lambda.
+  // At seconds=0 tau=tau_max (strict); as seconds grows tau decays toward tau_min
+  // (permissive).
+  float tau = tau_max * std::exp(-lambda * seconds);
+  float result = std::max(tau, tau_min);
+  return result;
+}
+
 bool VLADLoopClosureDetector::detectLoopWithRobot(
     size_t robot,
     const RobotPoseId& vertex_query,
     const VLADLoopClosureDetector::GlobalDesc& bow_vec,
     std::vector<RobotPoseId>* vertex_matches,
-    std::vector<double>* scores) {
+    std::vector<double>* scores,
+    uint64_t time_since_last_loop) {
   auto query_frame_outside_local_window =
       this->findFirstRobotPoseIdOutsideLocalWindow(vertex_query);
   if (query_frame_outside_local_window and
-      this->detectLoopOutsideLocalWindow(
-          robot, *query_frame_outside_local_window, bow_vec, vertex_matches, scores)) {
+      this->detectLoopOutsideLocalWindow(robot,
+                                         *query_frame_outside_local_window,
+                                         bow_vec,
+                                         vertex_matches,
+                                         scores,
+                                         time_since_last_loop)) {
     LOG(INFO) << "LCD: VPR detected with robot " << robot << " for vertex_query=("
               << vertex_query.first << "," << vertex_query.second << ").";
     return true;
@@ -40,7 +57,8 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
     const Database::GlobalDesc&
         global_desc,  // not used, leave it here for compatibility
     std::vector<RobotPoseId>* vertex_matches,
-    std::vector<double>* scores) {
+    std::vector<double>* scores,
+    uint64_t time_since_last_loop) {
   CHECK_NOTNULL(vertex_matches);
   if (db_.find(robot) == db_.end()) {
     LOG(WARNING) << "VLADLoopClosureDetector: No database for robot " << robot << ".";
@@ -115,6 +133,13 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
     return false;
   }
 
+  float time_since_last_loop_sec = static_cast<float>(time_since_last_loop) / 1e9f;
+
+  float dynamic_min_tau = tauAdaptiveScoring(params_.adaptive_scoring_tau_min,
+                                             params_.adaptive_scoring_tau_max,
+                                             params_.adaptive_scoring_lambda,
+                                             time_since_last_loop_sec);
+
   auto faiss_to_dbow_queryresults =
       [&](Database::Database::QueryResults& query_result,
           Database::Database::QueryDistances& query_similarity) -> DBoW2::QueryResults {
@@ -134,8 +159,15 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
           ss << " " << scores[iscore];
         }
         ss << " total: " << score << "\n";
+      } else {
+        ss << "\n";
       }
       CHECK_GT(score, 0.0f) << "VLADLoopClosureDetector: Score must be positive.";
+
+      if (params_.use_score_combination && score < dynamic_min_tau) {
+        ss << " [dropped: score " << score << " < tau " << dynamic_min_tau << "]\n";
+        continue;
+      }
 
       DBoW2::Result result;
       result.Id = query_result[i];

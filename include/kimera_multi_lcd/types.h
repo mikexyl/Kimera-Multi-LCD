@@ -241,6 +241,10 @@ struct LcdParams {
   float min_sim_vlad = 0.7f;
   bool use_score_combination = true;  // multiply FAISS distance by per-candidate scores
 
+  float adaptive_scoring_tau_max = 0.5f;
+  float adaptive_scoring_tau_min = 0.1f;
+  float adaptive_scoring_lambda = 0.05f;
+
   bool equals(const LcdParams& other) const {
     return (vocab_path_ == other.vocab_path_ &&
             inter_robot_only_ == other.inter_robot_only_ && alpha_ == other.alpha_ &&
