@@ -140,6 +140,9 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
                                              params_.adaptive_scoring_lambda,
                                              time_since_last_loop_sec);
 
+  using ScoringMode = LcdParams::VladScoringMode;
+  const ScoringMode scoring_mode = params_.vlad_scoring_mode;
+
   auto faiss_to_dbow_queryresults =
       [&](Database::Database::QueryResults& query_result,
           Database::Database::QueryDistances& query_similarity) -> DBoW2::QueryResults {
@@ -147,10 +150,12 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
     std::stringstream ss;
     ss << "DLCD: cand scores: \n";
     for (size_t i = 0; i < query_result.size(); ++i) {
-      // float score = query_similarity[i];
-      float score = params_.use_score_combination ? 1.0f : query_similarity[i];
+      float score = query_similarity[i];
       ss << score;
-      if (params_.use_score_combination) {
+
+      if (scoring_mode == ScoringMode::COMBINED_SCORE) {
+        // Multiply FAISS similarity by all per-candidate scores, then threshold.
+        score = 1.0f;
         auto scores = global_descs_.at(robot)
                           .at(db_EntryId_to_PoseId_[robot][query_result[i]])
                           .scores;
@@ -159,14 +164,19 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
           ss << " " << scores[iscore];
         }
         ss << " total: " << score << "\n";
+        CHECK_GT(score, 0.0f) << "VLADLoopClosureDetector: Score must be positive.";
+        if (score < dynamic_min_tau) {
+          ss << " [dropped: score " << score << " < tau " << dynamic_min_tau << "]\n";
+          continue;
+        }
       } else {
+        // VPR_SIMILARITY: threshold raw FAISS similarity against adaptive tau.
         ss << "\n";
-      }
-      CHECK_GT(score, 0.0f) << "VLADLoopClosureDetector: Score must be positive.";
-
-      if (params_.use_score_combination && score < dynamic_min_tau) {
-        ss << " [dropped: score " << score << " < tau " << dynamic_min_tau << "]\n";
-        continue;
+        CHECK_GT(score, 0.0f) << "VLADLoopClosureDetector: Score must be positive.";
+        if (score < dynamic_min_tau) {
+          ss << " [dropped: similarity " << score << " < tau " << dynamic_min_tau << "]\n";
+          continue;
+        }
       }
 
       DBoW2::Result result;
