@@ -7,7 +7,7 @@
  */
 
 #include <glog/logging.h>
-#include <spdlog/fmt/bundled/core.h>
+#include <spdlog/fmt/fmt.h>
 
 #include <cassert>
 #include <fstream>

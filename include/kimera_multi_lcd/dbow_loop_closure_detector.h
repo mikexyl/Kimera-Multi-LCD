@@ -18,7 +18,7 @@ class DBoWLoopClosureDetector
       global_descs_[robot_id] = PoseGlobalDesc();
       db_EntryId_to_PoseId_[robot_id] = std::unordered_map<size_t, PoseId>();
       global_desc_latest_pose_id_[robot_id] = pose_id;
-      ROS_INFO("Initialized BoW for robot %lu.", robot_id);
+      LOG(INFO) << "Initialized BoW for robot " << robot_id << ".";
     }
     // Add Bow vector to the robot's database
     DBoW2::EntryId entry_id = db_[robot_id]->add(bow_vector);
@@ -79,9 +79,8 @@ class DBoWLoopClosureDetector
 
     GlobalDesc bow_vec_prev;
     if (!findPreviousGlobalDesc(vertex_query, 5, &bow_vec_prev)) {
-      ROS_WARN("Cannot find previous BoW for query vertex (%lu,%lu).",
-               robot_query,
-               pose_query);
+      LOG(WARNING) << "Cannot find previous BoW for query vertex (" << robot_query
+                   << "," << pose_query << ").";
       return false;
     }
     // Compute nss factor with the previous keyframe of the query robot

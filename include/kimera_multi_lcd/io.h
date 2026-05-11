@@ -6,8 +6,8 @@
 
 #pragma once
 
-#include <pose_graph_tools_msgs/BowVector.h>
-#include <pose_graph_tools_msgs/VLCFrameMsg.h>
+#include <pose_graph_tools_msgs/msg/bow_vector.hpp>
+#include <pose_graph_tools_msgs/msg/vlc_frame_msg.hpp>
 
 #include <map>
 
@@ -15,4 +15,33 @@
 
 namespace kimera_multi_lcd {
 
+using BowVectorMsg = pose_graph_tools_msgs::msg::BowVector;
+using VLCFrameMsg = pose_graph_tools_msgs::msg::VLCFrameMsg;
+
+// Save BoW vectors
+void saveBowVectors(const std::map<PoseId, BowVectorMsg>& bow_vectors,
+                    const std::string& filename);
+
+void saveBowVectors(const std::map<PoseId, DBoW2::BowVector>& bow_vectors,
+                    const std::string& filename);
+
+// Save VLC Frames
+void saveVLCFrames(const std::map<PoseId, VLCFrameMsg>& vlc_frames,
+                   const std::string& filename);
+
+void saveVLCFrames(const std::map<PoseId, VLCFrame>& vlc_frames,
+                   const std::string& filename);
+
+// Save BoW vectors
+void loadBowVectors(const std::string& filename,
+                    std::map<PoseId, BowVectorMsg>& bow_vectors);
+
+void loadBowVectors(const std::string& filename,
+                    std::map<PoseId, DBoW2::BowVector>& bow_vectors);
+
+// Save VLC Frames
+void loadVLCFrames(const std::string& filename,
+                   std::map<PoseId, VLCFrameMsg>& vlc_frames);
+
+void loadVLCFrames(const std::string& filename, std::map<PoseId, VLCFrame>& vlc_frames);
 }  // namespace kimera_multi_lcd

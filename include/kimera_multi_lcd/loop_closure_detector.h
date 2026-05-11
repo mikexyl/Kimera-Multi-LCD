@@ -12,8 +12,7 @@
 #include <gtsam/inference/Symbol.h>
 #include <kimera_multi_lcd/lcd_third_party.h>
 #include <kimera_multi_lcd/types.h>
-#include <ros/ros.h>
-#include <ros/time.h>
+#include <rclcpp/rclcpp.hpp>
 
 #include <iostream>
 #include <map>
