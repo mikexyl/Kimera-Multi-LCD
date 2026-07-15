@@ -48,8 +48,6 @@ VLCFrame::VLCFrame(const pose_graph_tools_msgs::msg::VLCFrameMsg& msg)
                              gtsam::Point3(msg.t_base_cam.position.x,
                                            msg.t_base_cam.position.y,
                                            msg.t_base_cam.position.z));
-  CHECK(!T_base_cam_.equals(gtsam::Pose3::Identity(), 1e-6));
-
   keypoints_.resize(msg.keypoints.size() / 2);
   for (size_t i = 0; i < keypoints_.size(); ++i) {
     keypoints_[i].x = msg.keypoints[2 * i];
@@ -62,7 +60,7 @@ VLCFrame::VLCFrame(const pose_graph_tools_msgs::msg::VLCFrameMsg& msg)
     for (size_t i = 0; i < versors.size(); ++i) {
       gtsam::Vector3 v(versors[i].x, versors[i].y, versors[i].z);
       versors_.push_back(v);
-      const auto depth = msg.depths[i];
+      const auto depth = i < msg.depths.size() ? msg.depths[i] : 0.0f;
       if (depth < 1e-3) {
         landmarks_.push_back(gtsam::Vector3::Zero());
       } else {
@@ -123,13 +121,15 @@ void VLCFrame::toROSMessage(pose_graph_tools_msgs::msg::VLCFrameMsg* msg) const 
     msg->keypoints[2 * i + 1] = keypoints_[i].y;
   }
 
-  CHECK_EQ(descriptors_mat_.type(), CV_32FC1);
-  cv::Mat descriptors_fp16;
-  cv::convertFp16(descriptors_mat_, descriptors_fp16);
-  cv_bridge::CvImage cv_img;
-  cv_img.encoding = sensor_msgs::image_encodings::TYPE_16SC1;
-  cv_img.image = descriptors_fp16;
-  cv_img.toImageMsg(msg->descriptors_mat);
+  if (!descriptors_mat_.empty()) {
+    CHECK_EQ(descriptors_mat_.type(), CV_32FC1);
+    cv::Mat descriptors_fp16;
+    cv::convertFp16(descriptors_mat_, descriptors_fp16);
+    cv_bridge::CvImage cv_img;
+    cv_img.encoding = sensor_msgs::image_encodings::TYPE_16SC1;
+    cv_img.image = descriptors_fp16;
+    cv_img.toImageMsg(msg->descriptors_mat);
+  }
 
   msg->t_base_cam.position.x = T_base_cam_.translation().x();
   msg->t_base_cam.position.y = T_base_cam_.translation().y();

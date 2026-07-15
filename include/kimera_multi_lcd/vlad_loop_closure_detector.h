@@ -112,7 +112,6 @@ class VLADLoopClosureDetector : public LoopClosureDetector<FaissWrapper,
         new LcdThirdPartyWrapper(params.lcd_tp_params_));
 
     LOG(INFO) << "load lg from: " << params_.lcd_lg_model_path_;
-    LOG(INFO) << "load faiss from: " << params_.lcd_faiss_index_path_;
     feature_matcher_ = xfeat::LighterGlueCV::create(
         env_,
         xfeat::LighterGlueCV::Params{
@@ -126,15 +125,8 @@ class VLADLoopClosureDetector : public LoopClosureDetector<FaissWrapper,
   }
 
   virtual std::unique_ptr<Database> createDatabase(int dim) override {
-    LOG(INFO) << "Creating FAISS database with dim=" << dim;
-    auto faiss_mode = Database::Database::IndexMode::kIVFFlat;
-    int faiss_dim = 0;
-    if (params_.lcd_faiss_index_path_.empty()) {
-      faiss_mode = Database::Database::IndexMode::kFlat;
-      faiss_dim = dim;
-    }
-    auto faiss_db = std::make_unique<Database::Database>(
-        faiss_mode, params_.lcd_faiss_index_path_, false, faiss_dim);
+    LOG(INFO) << "Creating CPU flat FAISS database with dim=" << dim;
+    auto faiss_db = std::make_unique<Database::Database>(dim);
     return std::make_unique<Database>(std::move(faiss_db));
   }
 

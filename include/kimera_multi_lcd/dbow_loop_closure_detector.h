@@ -45,6 +45,10 @@ class DBoWLoopClosureDetector
 
   inline const OrbVocabulary* getVocabulary() const { return &vocab_; }
 
+  std::unique_ptr<OrbDatabaseWrapper> createDatabase(int /*dim*/) override {
+    return std::make_unique<OrbDatabaseWrapper>(vocab_, false, 0);
+  }
+
   void matchFeatures(const std::vector<cv::Point2f>& query_kpts,
                      const cv::Mat& query_desc,
                      std::vector<cv::Point2f>& train_kpts,

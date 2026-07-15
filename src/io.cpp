@@ -24,7 +24,7 @@ void saveBowVectors(const std::map<PoseId, BowVectorMsg>& bow_vectors,
   for (const auto& id_bowvec : bow_vectors) {
     record["ids"].push_back(id_bowvec.first);
     json bow_json;
-    pose_graph_tools_msgs::to_json(bow_json, id_bowvec.second);
+    pose_graph_tools_msgs::msg::to_json(bow_json, id_bowvec.second);
     record["bow_vectors"].push_back(bow_json);
   }
   outfile << record.dump();
@@ -49,7 +49,7 @@ void saveVLCFrames(const std::map<PoseId, VLCFrameMsg>& vlc_frames,
   for (const auto& id_frame : vlc_frames) {
     record["ids"].push_back(id_frame.first);
     json frame_json;
-    pose_graph_tools_msgs::to_json(frame_json, id_frame.second);
+    pose_graph_tools_msgs::msg::to_json(frame_json, id_frame.second);
     record["frames"].push_back(frame_json);
   }
   outfile << record.dump();
@@ -80,7 +80,8 @@ void loadBowVectors(const std::string& filename,
   for (size_t i = 0; i < record.at("ids").size(); i++) {
     PoseId pose_id = record.at("ids").at(i);
     BowVectorMsg bow_vector;
-    pose_graph_tools_msgs::from_json(record.at("bow_vectors").at(i), bow_vector);
+    pose_graph_tools_msgs::msg::from_json(record.at("bow_vectors").at(i),
+                                          bow_vector);
     bow_vectors[pose_id] = bow_vector;
   }
 }
@@ -111,7 +112,7 @@ void loadVLCFrames(const std::string& filename,
   for (size_t i = 0; i < record.at("ids").size(); i++) {
     PoseId pose_id = record.at("ids").at(i);
     VLCFrameMsg vlc_frame;
-    pose_graph_tools_msgs::from_json(record.at("frames").at(i), vlc_frame);
+    pose_graph_tools_msgs::msg::from_json(record.at("frames").at(i), vlc_frame);
     vlc_frames[pose_id] = vlc_frame;
   }
 }

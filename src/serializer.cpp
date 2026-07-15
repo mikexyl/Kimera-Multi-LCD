@@ -38,7 +38,7 @@ void from_json(const json& j, pcl::PointCloud<pcl::PointXYZ>& points) {
 
 }  // namespace pcl
 
-namespace pose_graph_tools_msgs {
+namespace pose_graph_tools_msgs::msg {
 
 void to_json(json& j, const pose_graph_tools_msgs::msg::BowVector& bow_vector) {
   j = json{{"word_ids", bow_vector.word_ids}, {"word_values", bow_vector.word_values}};
@@ -120,4 +120,4 @@ void from_json(const json& j, pose_graph_tools_msgs::msg::VLCFrameMsg& vlc_frame
   j.at("t_base_cam").at("qz").get_to(T_base_cam_R.z);
   j.at("t_base_cam").at("qw").get_to(T_base_cam_R.w);
 }
-}  // namespace pose_graph_tools_msgs
+}  // namespace pose_graph_tools_msgs::msg

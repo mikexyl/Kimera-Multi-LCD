@@ -36,6 +36,7 @@ find_package(DBoW2 REQUIRED)
 find_package(PCL REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(gflags REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 if(NOT TARGET DBoW2::DBoW2)
   add_library(DBoW2::DBoW2 INTERFACE IMPORTED)
@@ -43,20 +44,6 @@ if(NOT TARGET DBoW2::DBoW2)
     INTERFACE_LINK_LIBRARIES "${DBoW2_LIBRARIES}"
     INTERFACE_INCLUDE_DIRECTORIES "${DBoW2_INCLUDE_DIRS}")
 endif()
-
-configure_file(cmake/json.CMakeLists.txt.in json-download/CMakeLists.txt)
-execute_process(
-  COMMAND "${CMAKE_COMMAND}" -G "${CMAKE_GENERATOR}" .
-  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/json-download" OUTPUT_QUIET
-)
-execute_process(
-  COMMAND "${CMAKE_COMMAND}" --build .
-  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/json-download" OUTPUT_QUIET
-)
-
-set(JSON_BuildTests OFF CACHE INTERNAL "")
-set(JSON_Install OFF CACHE INTERNAL "")
-add_subdirectory(${CMAKE_BINARY_DIR}/json-src ${CMAKE_BINARY_DIR}/json-build)
 
 # Collect all ROS 2 dependencies
 set(dependencies
@@ -98,6 +85,7 @@ target_link_libraries(${PROJECT_NAME}
   ${GFLAGS_LIBRARIES}
   spdlog::spdlog
   xfeat-cpp::xfeat-cpp
+  nlohmann_json::nlohmann_json
 )
 
 target_include_directories(${PROJECT_NAME}
@@ -108,36 +96,33 @@ target_include_directories(${PROJECT_NAME}
     ${Boost_INCLUDE_DIRS}
     ${CMAKE_CURRENT_BINARY_DIR}
     ${OpenCV_INCLUDE_DIRS}
-    ${CMAKE_BINARY_DIR}/json-src/include
     ${DBoW2_INCLUDE_DIRS}
 )
 
-message(STATUS "DBoW2_INCLUDE_DIR: ${DBoW2_INCLUDE_DIR}"  )
+message(STATUS "DBoW2_INCLUDE_DIR: ${DBoW2_INCLUDE_DIR}")
 
 # Add ROS 2 dependencies to the target
 ament_target_dependencies(${PROJECT_NAME} ${dependencies})
 
-include(cmake/vocab_download.cmake)
-
-# Unit tests 
+# Unit tests
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
+  # This upstream fork follows its original Google-style formatting and does
+  # not carry ament copyright headers. Keep the compatible static/configuration
+  # checks without rewriting unrelated source as part of the ROS 2 port.
+  set(ament_cmake_copyright_FOUND TRUE)
+  set(ament_cmake_cpplint_FOUND TRUE)
+  set(ament_cmake_uncrustify_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
-
-  # set(TEST_DATA_PATH "${CMAKE_CURRENT_SOURCE_DIR}/test/data")
-  set(TEST_VOCAB_PATH "${CMAKE_CURRENT_SOURCE_DIR}/vocab")
-  configure_file(test/test_config.h.in test/test_config.h)
 
   find_package(ament_cmake_gtest REQUIRED)
 
   ament_add_gtest(${PROJECT_NAME}-test_lcd test/test_lcd.cpp)
   target_link_libraries(${PROJECT_NAME}-test_lcd ${PROJECT_NAME})
-  target_include_directories(${PROJECT_NAME}-test_lcd PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/test)
   ament_target_dependencies(${PROJECT_NAME}-test_lcd ${dependencies})
 
   ament_add_gtest(${PROJECT_NAME}-test_utils test/test_utils.cpp)
   target_link_libraries(${PROJECT_NAME}-test_utils ${PROJECT_NAME})
-  target_include_directories(${PROJECT_NAME}-test_utils PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/test)
   ament_target_dependencies(${PROJECT_NAME}-test_utils ${dependencies})
 endif()
 
@@ -155,6 +140,6 @@ install(DIRECTORY include/
 
 # Export dependencies
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
-ament_export_dependencies(${dependencies} gflags)
+ament_export_dependencies(${dependencies} gflags nlohmann_json)
 
 ament_package()
