@@ -57,6 +57,7 @@ void to_json(json& j, const pose_graph_tools_msgs::msg::VLCFrameMsg& vlc_frame) 
            {"pose_id", vlc_frame.pose_id},
            {"submap_id", vlc_frame.submap_id},
            {"keypoints", vlc_frame.keypoints},
+           {"landmark_ids", vlc_frame.landmark_ids},
            {"descriptors_mat",
             {{"height", vlc_frame.descriptors_mat.height},
              {"width", vlc_frame.descriptors_mat.width},
@@ -88,6 +89,9 @@ void from_json(const json& j, pose_graph_tools_msgs::msg::VLCFrameMsg& vlc_frame
   j.at("pose_id").get_to(vlc_frame.pose_id);
   j.at("submap_id").get_to(vlc_frame.submap_id);
   j.at("keypoints").get_to(vlc_frame.keypoints);
+  if (j.contains("landmark_ids")) {
+    j.at("landmark_ids").get_to(vlc_frame.landmark_ids);
+  }
   j.at("descriptors_mat").at("height").get_to(vlc_frame.descriptors_mat.height);
   j.at("descriptors_mat").at("width").get_to(vlc_frame.descriptors_mat.width);
   j.at("descriptors_mat").at("encoding").get_to(vlc_frame.descriptors_mat.encoding);

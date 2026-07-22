@@ -17,6 +17,7 @@
 #include <opengv/relative_pose/methods.hpp>
 #include <pose_graph_tools_msgs/msg/vlc_frame_msg.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
+#include <cstdint>
 #include <set>
 #include <tuple>
 #include <unordered_map>
@@ -74,6 +75,7 @@ class VLCFrame {
            const std::vector<cv::Point2f>& keypoints,
            const std::vector<gtsam::Vector3>& landmarks,
            const std::vector<gtsam::Vector3>& versors,
+           const std::vector<std::int64_t>& landmark_ids,
            const OrbDescriptor& descriptors_mat);
   VLCFrame(const pose_graph_tools_msgs::msg::VLCFrameMsg& msg);
   size_t robot_id_;
@@ -82,6 +84,7 @@ class VLCFrame {
   std::vector<cv::Point2f> keypoints_;     // 2D keypoints
   std::vector<gtsam::Vector3> landmarks_;  // 3D keypoints
   std::vector<gtsam::Vector3> versors_;    // bearing vector
+  std::vector<std::int64_t> landmark_ids_; // VIO IDs aligned with keypoints
   OrbDescriptorVec descriptors_vec_;
   OrbDescriptor descriptors_mat_;
   gtsam::Pose3 T_submap_pose_;  // 3D pose in submap frame

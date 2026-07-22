@@ -21,6 +21,8 @@
 #include <opengv/sac_problems/point_cloud/PointCloudSacProblem.hpp>
 #include <opengv/sac_problems/relative_pose/CentralRelativePoseSacProblem.hpp>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "kimera_multi_lcd/loop_closure_detector.h"
 
@@ -360,6 +362,8 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::recoverPose
   total_geometric_verifications_++;
   std::vector<unsigned int> i_query;  // input indices to stereo ransac
   std::vector<unsigned int> i_match;
+  std::vector<std::pair<unsigned int, unsigned int>> forward_pairs;
+  std::vector<std::pair<unsigned int, unsigned int>> backward_pairs;
 
   std::vector<gtsam::Vector3, Eigen::aligned_allocator<gtsam::Vector3>>
       bearing_vectors_query, bearing_vectors_match;
@@ -378,10 +382,12 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::recoverPose
     if (point_query.norm() > 1e-3) {
       points_query.push_back(point_query);
       bearing_vectors_match.push_back(bearing_vector_match);
+      backward_pairs.emplace_back(inlier_query->at(i), inlier_match->at(i));
     }
     if (point_match.norm() > 1e-3) {
       points_match.push_back(point_match);
       bearing_vectors_query.push_back(bearing_vector_query);
+      forward_pairs.emplace_back(inlier_query->at(i), inlier_match->at(i));
     }
   }
 
@@ -433,6 +439,7 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::recoverPose
           << " inliers found: " << ransac_forward.inliers_.size();
 
   gtsam::Pose3 T_mcam_qcam;
+  std::vector<std::pair<unsigned int, unsigned int>> verified_pairs;
 
   if (ransac_forward_success) {
     if (ransac_forward.inliers_.size() <
@@ -458,6 +465,12 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::recoverPose
     gtsam::Matrix T_mat = gtsam::Matrix::Identity(4, 4);
     T_mat.block<3, 4>(0, 0) = T_forward;
     T_mcam_qcam = gtsam::Pose3(T_mat);
+    verified_pairs.reserve(ransac_forward.inliers_.size());
+    for (const auto index : ransac_forward.inliers_) {
+      const size_t pair_index = static_cast<size_t>(index);
+      CHECK_LT(pair_index, forward_pairs.size());
+      verified_pairs.push_back(forward_pairs[pair_index]);
+    }
   } else {
     // run backward RANSAC if forward fails
     VLOG(1) << "Starting Stereo RANSAC (backward)";
@@ -503,6 +516,12 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::recoverPose
     T_mat.block<3, 4>(0, 0) = T_backward;
     gtsam::Pose3 T_qcam_mcam = gtsam::Pose3(T_mat);
     T_mcam_qcam = T_qcam_mcam.inverse();
+    verified_pairs.reserve(ransac_backward.inliers_.size());
+    for (const auto index : ransac_backward.inliers_) {
+      const size_t pair_index = static_cast<size_t>(index);
+      CHECK_LT(pair_index, backward_pairs.size());
+      verified_pairs.push_back(backward_pairs[pair_index]);
+    }
   }
 
   gtsam::Pose3 T_qbody_qcam = vlc_frames_[vertex_query].T_base_cam_;
@@ -524,12 +543,16 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::recoverPose
   // Output is the averaged 3D transformation from the match frame to the query frame
   *T_query_match = T_qbody_mbody;
 
-  // Populate inlier indices (use forward direction inliers)
+  // Return the actual descriptor indices retained by stereo RANSAC so
+  // downstream consumers can preserve landmark correspondences.
   inlier_query->clear();
   inlier_match->clear();
-
-  // TODO: inliers doesn't seem needed but only the count
-  inlier_query->resize(ransac_forward.inliers_.size());
+  inlier_query->reserve(verified_pairs.size());
+  inlier_match->reserve(verified_pairs.size());
+  for (const auto & [query_index, match_index] : verified_pairs) {
+    inlier_query->push_back(query_index);
+    inlier_match->push_back(match_index);
+  }
 
   return true;
 }

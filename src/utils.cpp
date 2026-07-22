@@ -106,6 +106,7 @@ size_t computeVLCFramePayloadBytes(const pose_graph_tools_msgs::msg::VLCFrameMsg
   bytes += sizeof(msg.pose_id);
   bytes += sizeof(msg.submap_id);
   bytes += sizeof(float) * msg.keypoints.size();
+  bytes += sizeof(std::int64_t) * msg.landmark_ids.size();
   bytes += msg.descriptors_mat.data.size();
   bytes += msg.versors.data.size();
   bytes += sizeof(float) * msg.depths.size();

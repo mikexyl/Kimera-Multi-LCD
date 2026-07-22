@@ -18,10 +18,12 @@ VLCFrame makeFrame() {
       gtsam::Vector3(0.5, 1.0, 2.0), gtsam::Vector3::Zero()};
   std::vector<gtsam::Vector3> versors{
       gtsam::Vector3(0.25, 0.5, 1.0), gtsam::Vector3(0.1, -0.2, 1.0)};
+  std::vector<std::int64_t> landmark_ids{101, 202};
   cv::Mat descriptors = (cv::Mat_<float>(2, 4) <<
       0.125f, -0.25f, 0.5f, 1.0f,
       -1.0f, 0.75f, 0.375f, -0.125f);
-  VLCFrame frame(2, 17, keypoints, landmarks, versors, descriptors);
+  VLCFrame frame(
+      2, 17, keypoints, landmarks, versors, landmark_ids, descriptors);
   frame.submap_id_ = 4;
   frame.T_submap_pose_ = gtsam::Pose3(
       gtsam::Rot3::RzRyRx(0.1, -0.2, 0.3), gtsam::Point3(1.0, 2.0, 3.0));
@@ -37,6 +39,7 @@ void expectFramesEqual(const VLCFrame& expected, const VLCFrame& actual) {
   ASSERT_EQ(expected.keypoints_.size(), actual.keypoints_.size());
   ASSERT_EQ(expected.versors_.size(), actual.versors_.size());
   ASSERT_EQ(expected.landmarks_.size(), actual.landmarks_.size());
+  EXPECT_EQ(expected.landmark_ids_, actual.landmark_ids_);
   for (size_t i = 0; i < expected.keypoints_.size(); ++i) {
     EXPECT_NEAR(expected.keypoints_[i].x, actual.keypoints_[i].x, 1e-5);
     EXPECT_NEAR(expected.keypoints_[i].y, actual.keypoints_[i].y, 1e-5);

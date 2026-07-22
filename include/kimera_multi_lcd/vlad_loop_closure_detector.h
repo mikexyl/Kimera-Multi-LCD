@@ -1,8 +1,7 @@
 #pragma once
 
 #include <xfeat-cpp/faiss_database.h>
-#include <xfeat-cpp/lighterglue_cv.h>
-#include <xfeat-cpp/xfeat_cv.h>
+#include <xfeat-cpp/lighterglue_trt.h>
 
 #include "kimera_multi_lcd/loop_closure_detector.h"
 
@@ -86,18 +85,17 @@ class DummyFeatureDetector : cv::FeatureDetector {
 
 class VLADLoopClosureDetector : public LoopClosureDetector<FaissWrapper,
                                                            DummyFeatureDetector,
-                                                           xfeat::LighterGlueCV> {
+                                                           xfeat::LighterGlueTRT> {
  public:
   using Database = FaissWrapper;
   using BaseDetector =
-      LoopClosureDetector<FaissWrapper, DummyFeatureDetector, xfeat::LighterGlueCV>;
+      LoopClosureDetector<FaissWrapper, DummyFeatureDetector, xfeat::LighterGlueTRT>;
 
   static constexpr bool kVLADLCDUseGPU = true;
 
   template <typename... Args>
   VLADLoopClosureDetector(Args&&... args)
-      : BaseDetector(std::forward<Args>(args)...),
-        env_(Ort::Env(ORT_LOGGING_LEVEL_ERROR, "kimera_multi_lcd")) {}
+      : BaseDetector(std::forward<Args>(args)...) {}
 
   /* ------------------------------------------------------------------------
    */
@@ -112,15 +110,10 @@ class VLADLoopClosureDetector : public LoopClosureDetector<FaissWrapper,
         new LcdThirdPartyWrapper(params.lcd_tp_params_));
 
     LOG(INFO) << "load lg from: " << params_.lcd_lg_model_path_;
-    feature_matcher_ = xfeat::LighterGlueCV::create(
-        env_,
-        xfeat::LighterGlueCV::Params{
-            .model_path = params_.lcd_lg_model_path_,
-            .use_gpu = true,
-            .min_score = -1,
-            .n_kpts = params_.lcd_lg_num_features_,
-            // TODO(mike): add params to input real images's size
-            .image_size = cv::Size(params_.image_width_, params_.image_height_)});
+    feature_matcher_ =
+        cv::makePtr<xfeat::LighterGlueTRT>(params_.lcd_lg_model_path_);
+    LOG(INFO) << "Using native TensorRT LighterGlue for distributed loop "
+                 "verification.";
     LOG(INFO) << "VLADLoopClosureDetector initialized.";
   }
 
@@ -142,9 +135,10 @@ class VLADLoopClosureDetector : public LoopClosureDetector<FaissWrapper,
     CHECK(!query_kpts.empty()) << "VLADLoopClosureDetector: query_kpts is empty";
     CHECK(!train_kpts.empty()) << "VLADLoopClosureDetector: train_kpts is empty";
 
-    auto lg_matcher = std::dynamic_pointer_cast<xfeat::LighterGlueCV>(feature_matcher_);
+    auto lg_matcher =
+        std::dynamic_pointer_cast<xfeat::LighterGlueTRT>(feature_matcher_);
     CHECK(lg_matcher.get() != nullptr)
-        << "VLADLoopClosureDetector: feature_matcher_ is not LighterGlueCV";
+        << "VLADLoopClosureDetector: feature_matcher_ is not LighterGlueTRT";
 
     CHECK_EQ(query_kpts.size(), (size_t)query_desc.rows);
     CHECK_EQ(train_kpts.size(), (size_t)train_desc.rows);
@@ -166,10 +160,30 @@ class VLADLoopClosureDetector : public LoopClosureDetector<FaissWrapper,
     // set all scores to 1
     train_det.scores = cv::Mat::ones(train_det.keypoints.rows, 1, CV_32F);
 
-    DMatchVec lg_matches;
     LOG(INFO) << "Matching " << query_det.keypoints.rows << " query keypoints with "
               << train_det.keypoints.rows << " train keypoints.";
-    lg_matcher->match(query_det, train_det, lg_matches);
+
+    const std::array<float, 2> image_size = {
+        static_cast<float>(params_.image_width_),
+        static_cast<float>(params_.image_height_)};
+    std::vector<float> match_scores;
+    const auto match_indices = lg_matcher->match(query_det,
+                                                 image_size,
+                                                 train_det,
+                                                 image_size,
+                                                 -1.0f,
+                                                 &match_scores);
+
+    DMatchVec lg_matches;
+    for (size_t query_index = 0; query_index < match_indices.size();
+         ++query_index) {
+      for (const int train_index : match_indices.at(query_index)) {
+        lg_matches.emplace_back(static_cast<int>(query_index),
+                                train_index,
+                                0,
+                                match_scores.at(query_index));
+      }
+    }
 
     // compute homography
     LOG(INFO) << "Found " << lg_matches.size() << " matches.";
@@ -234,8 +248,6 @@ class VLADLoopClosureDetector : public LoopClosureDetector<FaissWrapper,
       // Return the first frame ID outside the local window.
     }
   }
-
-  Ort::Env env_;
 };
 
 }  // namespace kimera_multi_lcd

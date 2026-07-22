@@ -21,14 +21,17 @@ VLCFrame::VLCFrame(const RobotId& robot_id,
                    const std::vector<cv::Point2f>& keypoints,
                    const std::vector<gtsam::Vector3>& landmarks,
                    const std::vector<gtsam::Vector3>& versors,
+                   const std::vector<std::int64_t>& landmark_ids,
                    const OrbDescriptor& descriptors_mat)
     : robot_id_(robot_id),
       pose_id_(pose_id),
       keypoints_(keypoints),
       landmarks_(landmarks),
       versors_(versors),
+      landmark_ids_(landmark_ids),
       descriptors_mat_(descriptors_mat) {
   assert(keypoints_.size() == static_cast<size_t>(descriptors_mat_.rows));
+  assert(keypoints_.size() == landmark_ids_.size());
   initializeDescriptorsVector();
 }
 
@@ -52,6 +55,12 @@ VLCFrame::VLCFrame(const pose_graph_tools_msgs::msg::VLCFrameMsg& msg)
   for (size_t i = 0; i < keypoints_.size(); ++i) {
     keypoints_[i].x = msg.keypoints[2 * i];
     keypoints_[i].y = msg.keypoints[2 * i + 1];
+  }
+  if (msg.landmark_ids.empty()) {
+    landmark_ids_.assign(keypoints_.size(), -1);
+  } else {
+    CHECK_EQ(msg.landmark_ids.size(), keypoints_.size());
+    landmark_ids_ = msg.landmark_ids;
   }
 
   if (!msg.versors.data.empty()) {
@@ -120,6 +129,8 @@ void VLCFrame::toROSMessage(pose_graph_tools_msgs::msg::VLCFrameMsg* msg) const 
     msg->keypoints[2 * i] = keypoints_[i].x;
     msg->keypoints[2 * i + 1] = keypoints_[i].y;
   }
+  CHECK_EQ(landmark_ids_.size(), keypoints_.size());
+  msg->landmark_ids = landmark_ids_;
 
   if (!descriptors_mat_.empty()) {
     CHECK_EQ(descriptors_mat_.type(), CV_32FC1);
