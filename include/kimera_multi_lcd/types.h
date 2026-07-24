@@ -240,16 +240,13 @@ struct LcdParams {
 
   float min_sim_vlad = 0.7f;
 
-  // Scoring mode for VLAD loop closure candidates.
-  // COMBINED_SCORE: multiply FAISS similarity by per-candidate scores, then
-  //   threshold against a time-adaptive tau (default).
-  // VPR_SIMILARITY: apply the time-adaptive tau directly to the raw FAISS
-  //   similarity, without multiplying by per-candidate scores.
+  // Scoring mode for VLAD loop closure candidates. COMBINED_SCORE is retained
+  // only so legacy configurations fail with an explicit error.
   enum class VladScoringMode { COMBINED_SCORE = 0, VPR_SIMILARITY };
-  VladScoringMode vlad_scoring_mode = VladScoringMode::COMBINED_SCORE;
+  VladScoringMode vlad_scoring_mode = VladScoringMode::VPR_SIMILARITY;
 
-  // Kept for backward compatibility — true maps to COMBINED_SCORE.
-  bool use_score_combination = true;  // deprecated; prefer vlad_scoring_mode
+  // Deprecated and ignored; retained only for configuration compatibility.
+  bool use_score_combination = false;
 
   float adaptive_scoring_tau_max = 0.5f;
   float adaptive_scoring_tau_min = 0.1f;

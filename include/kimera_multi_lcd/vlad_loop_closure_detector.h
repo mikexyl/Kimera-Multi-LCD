@@ -106,6 +106,18 @@ class VLADLoopClosureDetector : public LoopClosureDetector<FaissWrapper,
   void loadAndInitialize(const LcdParams& params) override {
     LoopClosureDetectorBase::loadAndInitialize(params);
 
+    switch (params_.vlad_scoring_mode) {
+      case LcdParams::VladScoringMode::COMBINED_SCORE:
+        LOG(FATAL) << "COMBINED_SCORE is deprecated and unsupported. "
+                      "Set scoring_mode=1 to use VPR_SIMILARITY.";
+        break;
+      case LcdParams::VladScoringMode::VPR_SIMILARITY:
+        break;
+      default:
+        LOG(FATAL) << "Invalid VLAD scoring mode. Only scoring_mode=1 "
+                      "(VPR_SIMILARITY) is supported.";
+    }
+
     LOG(INFO) << "dist_local: " << params_.dist_local_;
 
     lcd_tp_wrapper_ = std::unique_ptr<LcdThirdPartyWrapper>(
