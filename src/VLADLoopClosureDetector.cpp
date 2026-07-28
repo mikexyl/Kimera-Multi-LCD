@@ -69,7 +69,7 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
   PoseId pose_query = robot_pose_id.second;
   auto robot_db = db_.at(robot).get();
 
-  CHECK(!global_desc.descriptor.empty())
+  CHECK(!global_desc.empty())
       << "VLADLoopClosureDetector: Global descriptor for pose " << robot_query << ":"
       << pose_query << " is empty.";
 
@@ -101,7 +101,7 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
   }
 
   robot_db->search(
-      global_desc.descriptor, top_k, query_result, query_similarity, max_search_id);
+      global_desc, top_k, query_result, query_similarity, max_search_id);
 
   for (size_t i = 0; i < query_result.size(); ++i) {
     if (query_result[i] == -1 || query_similarity[i] < params_.min_sim_vlad) {
@@ -140,9 +140,6 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
                                              params_.adaptive_scoring_lambda,
                                              time_since_last_loop_sec);
 
-  using ScoringMode = LcdParams::VladScoringMode;
-  const ScoringMode scoring_mode = params_.vlad_scoring_mode;
-
   auto faiss_to_dbow_queryresults =
       [&](Database::Database::QueryResults& query_result,
           Database::Database::QueryDistances& query_similarity) -> DBoW2::QueryResults {
@@ -153,30 +150,12 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
       float score = query_similarity[i];
       ss << score;
 
-      if (scoring_mode == ScoringMode::COMBINED_SCORE) {
-        // Multiply FAISS similarity by all per-candidate scores, then threshold.
-        score = 1.0f;
-        auto scores = global_descs_.at(robot)
-                          .at(db_EntryId_to_PoseId_[robot][query_result[i]])
-                          .scores;
-        for (size_t iscore = 0; iscore < scores.size(); ++iscore) {
-          score *= scores[iscore];
-          ss << " " << scores[iscore];
-        }
-        ss << " total: " << score << "\n";
-        CHECK_GT(score, 0.0f) << "VLADLoopClosureDetector: Score must be positive.";
-        if (score < dynamic_min_tau) {
-          ss << " [dropped: score " << score << " < tau " << dynamic_min_tau << "]\n";
-          continue;
-        }
-      } else {
-        // VPR_SIMILARITY: threshold raw FAISS similarity against adaptive tau.
-        ss << "\n";
-        CHECK_GT(score, 0.0f) << "VLADLoopClosureDetector: Score must be positive.";
-        if (score < dynamic_min_tau) {
-          ss << " [dropped: similarity " << score << " < tau " << dynamic_min_tau << "]\n";
-          continue;
-        }
+      ss << "\n";
+      CHECK_GT(score, 0.0f) << "VLADLoopClosureDetector: Score must be positive.";
+      if (score < dynamic_min_tau) {
+        ss << " [dropped: similarity " << score << " < tau " << dynamic_min_tau
+           << "]\n";
+        continue;
       }
 
       DBoW2::Result result;
@@ -194,7 +173,7 @@ bool VLADLoopClosureDetector::detectLoopOutsideLocalWindow(
   auto dbow_query_result = faiss_to_dbow_queryresults(query_result, query_similarity);
 
   if (!dbow_query_result.empty()) {
-    // Select the result with the highest combined score.
+    // Select the result with the highest VPR similarity.
     DBoW2::Result best_result =
         *std::max_element(dbow_query_result.begin(),
                           dbow_query_result.end(),

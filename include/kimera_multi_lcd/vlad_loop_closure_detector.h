@@ -7,13 +7,8 @@
 
 namespace kimera_multi_lcd {
 
-struct GlobalDescWithScores {
-  cv::Mat descriptor;
-  std::vector<float> scores;
-};
-
 struct FaissWrapper {
-  using GlobalDesc = GlobalDescWithScores;
+  using GlobalDesc = cv::Mat;
   using Desc = cv::Mat;
   using DescVector = std::vector<cv::Mat>;
   using DescMat = cv::Mat;
@@ -28,9 +23,9 @@ struct FaissWrapper {
 
   auto add(const GlobalDesc& global_desc) {
     CHECK_NOTNULL(db_);
-    CHECK(not global_desc.descriptor.empty());
+    CHECK(not global_desc.empty());
     try {
-      return db_->add(global_desc.descriptor);
+      return db_->add(global_desc);
     } catch (const std::exception& e) {
       LOG(ERROR) << "Failed to add to database: " << e.what();
       throw;
@@ -204,7 +199,7 @@ class VLADLoopClosureDetector : public LoopClosureDetector<FaissWrapper,
     // Skip if this BoW vector has been added
     if (globalDescExists(id)) return;
     if (db_.find(robot_id) == db_.end()) {
-      db_[robot_id] = createDatabase(bow_vector.descriptor.cols);
+      db_[robot_id] = createDatabase(bow_vector.cols);
       global_descs_[robot_id] = PoseGlobalDesc();
       db_EntryId_to_PoseId_[robot_id] = std::unordered_map<size_t, PoseId>();
       global_desc_latest_pose_id_[robot_id] = pose_id;

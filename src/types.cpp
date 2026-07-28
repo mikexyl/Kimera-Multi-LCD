@@ -5,7 +5,7 @@
  */
 #include "kimera_multi_lcd/types.h"
 
-#include <cv_bridge/cv_bridge.h>
+#include <cv_bridge/cv_bridge.hpp>
 #include <glog/logging.h>
 #include <pcl/point_cloud.h>
 #include <pcl_conversions/pcl_conversions.h>
