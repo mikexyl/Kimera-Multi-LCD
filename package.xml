@@ -20,6 +20,7 @@
   <depend>spdlog</depend>
   <depend>tbb</depend>
   <depend>opengv</depend>
+  <depend>teaserpp</depend>
   <depend>xfeat-cpp</depend>
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>

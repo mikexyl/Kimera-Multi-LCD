@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <fstream>
 
+#include "kimera_multi_lcd/sim3_utils.h"
+
 namespace kimera_multi_lcd {
 
 void BowVectorToMsg(const DBoW2::BowVector& bow_vec,
@@ -64,7 +66,7 @@ void VLCEdgeToMsg(const VLCEdge& edge, pose_graph_tools_msgs::msg::PoseGraphEdge
   msg->key_to = edge.vertex_dst_.second;
   msg->type = pose_graph_tools_msgs::msg::PoseGraphEdge::LOOPCLOSE;
 
-  gtsam::Pose3 pose = edge.T_src_dst_;
+  const gtsam::Pose3 pose = physicalPose(edge.T_src_dst_);
   gtsam::Quaternion quat = pose.rotation().toQuaternion();
   gtsam::Point3 position = pose.translation();
 
@@ -76,6 +78,9 @@ void VLCEdgeToMsg(const VLCEdge& edge, pose_graph_tools_msgs::msg::PoseGraphEdge
   msg->pose.position.x = position.x();
   msg->pose.position.y = position.y();
   msg->pose.position.z = position.z();
+  msg->has_scale = edge.has_scale_;
+  msg->scale = edge.T_src_dst_.scale();
+  msg->scale_sigma = edge.scale_sigma_;
 }
 
 void VLCEdgeFromMsg(const pose_graph_tools_msgs::msg::PoseGraphEdge& msg,
@@ -88,7 +93,10 @@ void VLCEdgeFromMsg(const pose_graph_tools_msgs::msg::PoseGraphEdge& msg,
                        msg.pose.orientation.y,
                        msg.pose.orientation.z);
   gtsam::Point3 position(msg.pose.position.x, msg.pose.position.y, msg.pose.position.z);
-  edge->T_src_dst_ = gtsam::Pose3(rotation, position);
+  edge->has_scale_ = msg.has_scale;
+  edge->scale_sigma_ = msg.scale_sigma;
+  edge->T_src_dst_ =
+      similarityFromPhysical(rotation, position, msg.has_scale ? msg.scale : 1.0);
 }
 
 size_t computeBowQueryPayloadBytes(const pose_graph_tools_msgs::msg::BowQuery& msg) {

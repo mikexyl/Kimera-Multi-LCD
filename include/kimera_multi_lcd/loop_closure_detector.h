@@ -24,6 +24,8 @@
 #include <vector>
 
 #include "kimera_multi_lcd/visualizer.h"
+#include "kimera_multi_lcd/orbslam3_sim3_estimator.h"
+#include "kimera_multi_lcd/teaser_sim3_estimator.h"
 
 namespace kimera_multi_lcd {
 
@@ -154,6 +156,16 @@ class LoopClosureDetector : public LoopClosureDetectorBase {
                    std::vector<unsigned int>* inlier_match,
                    gtsam::Pose3* T_query_match,
                    const gtsam::Rot3* R_query_match_prior = nullptr);
+
+  /** Dispatch stereo verification and return query-from-match Sim3. OpenGV is
+   * embedded at unit scale; scale-aware methods never fall back. */
+  bool recoverPoseSim3(const RobotPoseId& vertex_query,
+                       const RobotPoseId& vertex_match,
+                       std::vector<unsigned int>* inlier_query,
+                       std::vector<unsigned int>* inlier_match,
+                       gtsam::Similarity3* T_query_match,
+                       size_t* valid_pair_count = nullptr,
+                       const gtsam::Rot3* R_query_match_prior = nullptr);
 
   inline void addVLCFrame(const RobotPoseId& id, const VLCFrame& frame) {
     vlc_frames_[id] = frame;

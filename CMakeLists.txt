@@ -30,6 +30,7 @@ find_package(Boost REQUIRED)
 
 find_package(GTSAM REQUIRED)
 find_package(opengv REQUIRED)
+find_package(teaserpp REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(xfeat-cpp REQUIRED)
 find_package(DBoW2 REQUIRED)
@@ -72,6 +73,10 @@ add_library(${PROJECT_NAME}
   src/serializer.cpp
   src/io.cpp
   src/VLADLoopClosureDetector.cpp
+  src/teaser_sim3_estimator.cpp
+  src/orbslam3_sim3_estimator.cpp
+  third_party/pyslam/solvers/Random.cpp
+  third_party/pyslam/solvers/Sim3Solver.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}
@@ -79,6 +84,7 @@ target_link_libraries(${PROJECT_NAME}
   ${OpenCV_LIBRARIES}
   gtsam
   opengv
+  teaserpp::teaser_registration
   DBoW2::DBoW2
   tbb
   glog
@@ -97,6 +103,7 @@ target_include_directories(${PROJECT_NAME}
     ${CMAKE_CURRENT_BINARY_DIR}
     ${OpenCV_INCLUDE_DIRS}
     ${DBoW2_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/pyslam/solvers
 )
 
 message(STATUS "DBoW2_INCLUDE_DIR: ${DBoW2_INCLUDE_DIR}")
@@ -124,6 +131,15 @@ if(BUILD_TESTING)
   ament_add_gtest(${PROJECT_NAME}-test_utils test/test_utils.cpp)
   target_link_libraries(${PROJECT_NAME}-test_utils ${PROJECT_NAME})
   ament_target_dependencies(${PROJECT_NAME}-test_utils ${dependencies})
+
+  ament_add_gtest(${PROJECT_NAME}-test_teaser_sim3 test/test_teaser_sim3.cpp)
+  target_link_libraries(${PROJECT_NAME}-test_teaser_sim3 ${PROJECT_NAME})
+  ament_target_dependencies(${PROJECT_NAME}-test_teaser_sim3 ${dependencies})
+
+  ament_add_gtest(${PROJECT_NAME}-test_orbslam3_sim3
+    test/test_orbslam3_sim3.cpp)
+  target_link_libraries(${PROJECT_NAME}-test_orbslam3_sim3 ${PROJECT_NAME})
+  ament_target_dependencies(${PROJECT_NAME}-test_orbslam3_sim3 ${dependencies})
 endif()
 
 # Install targets
@@ -140,6 +156,6 @@ install(DIRECTORY include/
 
 # Export dependencies
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
-ament_export_dependencies(${dependencies} gflags nlohmann_json)
+ament_export_dependencies(${dependencies} gflags nlohmann_json teaserpp)
 
 ament_package()

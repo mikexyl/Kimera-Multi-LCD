@@ -89,6 +89,24 @@ TEST(UtilsTest, JsonRoundTripPreservesSerializedVlcFrame) {
   expectFramesEqual(input, output);
 }
 
+TEST(UtilsTest, OpenGvRemainsDefaultStereoVerifier) {
+  const LcdParams params{};
+  EXPECT_EQ(params.stereo_verification_method_, "opengv_pnp");
+  EXPECT_DOUBLE_EQ(params.orbslam3_reprojection_threshold_px_, 15.0);
+  EXPECT_DOUBLE_EQ(params.orbslam3_min_scale_, 0.5);
+  EXPECT_DOUBLE_EQ(params.orbslam3_max_scale_, 2.0);
+  EXPECT_FALSE(stereoVerificationMethodHasScale("opengv_pnp"));
+  EXPECT_TRUE(stereoVerificationMethodHasScale("teaser_sim3"));
+  EXPECT_TRUE(stereoVerificationMethodHasScale("orbslam3_sim3"));
+
+  const VLCEdge edge({0, 1}, {0, 7}, gtsam::Pose3::Identity());
+  pose_graph_tools_msgs::msg::PoseGraphEdge msg;
+  VLCEdgeToMsg(edge, &msg);
+  EXPECT_FALSE(msg.has_scale);
+  EXPECT_DOUBLE_EQ(msg.scale, 1.0);
+  EXPECT_DOUBLE_EQ(msg.scale_sigma, -1.0);
+}
+
 TEST(UtilsTest, VLCEdgeRoundTrip) {
   const gtsam::Pose3 pose(gtsam::Rot3::RzRyRx(0.2, -0.1, 0.4),
                           gtsam::Point3(1.0, 2.0, 3.0));
@@ -99,6 +117,26 @@ TEST(UtilsTest, VLCEdgeRoundTrip) {
   VLCEdgeFromMsg(msg, &output);
   EXPECT_EQ(input.vertex_src_, output.vertex_src_);
   EXPECT_EQ(input.vertex_dst_, output.vertex_dst_);
+  EXPECT_TRUE(input.T_src_dst_.equals(output.T_src_dst_, 1e-9));
+  EXPECT_FALSE(output.has_scale_);
+  EXPECT_DOUBLE_EQ(output.T_src_dst_.scale(), 1.0);
+  EXPECT_DOUBLE_EQ(output.scale_sigma_, -1.0);
+}
+
+TEST(UtilsTest, VLCEdgeRoundTripPreservesMeasuredUnitScale) {
+  const auto similarity = similarityFromPhysical(
+      gtsam::Rot3::Rz(0.2), gtsam::Point3(3.0, -2.0, 1.0), 1.0);
+  const VLCEdge input({2, 4}, {3, 8}, similarity, true, 0.1, "teaser_sim3");
+  pose_graph_tools_msgs::msg::PoseGraphEdge msg;
+  VLCEdgeToMsg(input, &msg);
+  EXPECT_TRUE(msg.has_scale);
+  EXPECT_DOUBLE_EQ(msg.scale, 1.0);
+  EXPECT_DOUBLE_EQ(msg.scale_sigma, 0.1);
+  VLCEdge output;
+  VLCEdgeFromMsg(msg, &output);
+  EXPECT_TRUE(output.has_scale_);
+  EXPECT_DOUBLE_EQ(output.T_src_dst_.scale(), 1.0);
+  EXPECT_DOUBLE_EQ(output.scale_sigma_, 0.1);
   EXPECT_TRUE(input.T_src_dst_.equals(output.T_src_dst_, 1e-9));
 }
 

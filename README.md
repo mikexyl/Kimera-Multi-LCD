@@ -4,6 +4,25 @@ Loop closure detection for centralized and distributed multirobot visual systems
 This package was used in the [Kimera-Multi system](https://github.com/MIT-SPARK/Kimera-Multi).
 Sample usage can be found in the [distributed loop closure modules](https://github.com/MIT-SPARK/Kimera-Distributed).
 
+## Stereo verification backends
+
+`stereo_verification_method` accepts:
+
+- `opengv_pnp` (default): metric Pose3 verification without a measured scale.
+- `teaser_sim3`: TEASER++ robust 3D-3D registration with measured scale.
+- `orbslam3_sim3`: pySLAM/ORB-SLAM3-style three-point Horn Sim3 RANSAC with
+  symmetric reprojection checks and measured scale.
+
+The ORB-SLAM3 backend uses `orbslam3_reprojection_threshold_px` (default
+`15.0`, deliberately looser than the OpenGV threshold),
+`max_ransac_iterations`, `avg_focal_length`, and the common
+geometric-verification inlier limits. Its
+accepted scale interval is configured by `orbslam3_min_scale` and
+`orbslam3_max_scale` (defaults `0.5` and `2.0`). It never falls back to OpenGV.
+
+The vendored pySLAM/ORB-SLAM3 solver is GPLv3-or-later; provenance and local
+adaptations are documented in `third_party/pyslam/README.md`.
+
 ## Citation
 
 - [1] Y. Chang, Y. Tian, J. P. How and L. Carlone, "Kimera-Multi: a System for Distributed Multi-Robot Metric-Semantic Simultaneous Localization and Mapping," 2021 IEEE International Conference on Robotics and Automation (ICRA), Xi'an, China, 2021, pp. 11210-11218, doi: 10.1109/ICRA48506.2021.9561090.

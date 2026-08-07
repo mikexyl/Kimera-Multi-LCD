@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "kimera_multi_lcd/loop_closure_detector.h"
+#include "kimera_multi_lcd/sim3_utils.h"
 
 using RansacProblem =
     opengv::sac_problems::relative_pose::CentralRelativePoseSacProblem;
@@ -554,6 +555,134 @@ bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::recoverPose
     inlier_match->push_back(match_index);
   }
 
+  return true;
+}
+
+template <typename Database, typename FeatureDetector, typename FeatureMatcher>
+bool LoopClosureDetector<Database, FeatureDetector, FeatureMatcher>::
+    recoverPoseSim3(const RobotPoseId& vertex_query,
+                    const RobotPoseId& vertex_match,
+                    std::vector<unsigned int>* inlier_query,
+                    std::vector<unsigned int>* inlier_match,
+                    gtsam::Similarity3* T_query_match,
+                    size_t* valid_pair_count,
+                    const gtsam::Rot3* R_query_match_prior) {
+  CHECK_NOTNULL(inlier_query);
+  CHECK_NOTNULL(inlier_match);
+  CHECK_NOTNULL(T_query_match);
+  if (valid_pair_count) {
+    *valid_pair_count = 0;
+  }
+
+  if (params_.stereo_verification_method_ == "opengv_pnp") {
+    gtsam::Pose3 pose;
+    const bool success = recoverPose(vertex_query,
+                                     vertex_match,
+                                     inlier_query,
+                                     inlier_match,
+                                     &pose,
+                                     R_query_match_prior);
+    if (success) {
+      *T_query_match = similarityFromPose(pose);
+    }
+    return success;
+  }
+  const bool use_teaser =
+      params_.stereo_verification_method_ == "teaser_sim3";
+  const bool use_orbslam3 =
+      params_.stereo_verification_method_ == "orbslam3_sim3";
+  if (!use_teaser && !use_orbslam3) {
+    throw std::invalid_argument("Unsupported stereo_verification_method: " +
+                                params_.stereo_verification_method_);
+  }
+  if (inlier_query->size() != inlier_match->size()) {
+    return false;
+  }
+
+  total_geometric_verifications_++;
+  using PointVector =
+      std::vector<gtsam::Point3, Eigen::aligned_allocator<gtsam::Point3>>;
+  PointVector source_points;
+  PointVector destination_points;
+  std::vector<std::pair<unsigned int, unsigned int>> descriptor_pairs;
+  source_points.reserve(inlier_query->size());
+  destination_points.reserve(inlier_query->size());
+  descriptor_pairs.reserve(inlier_query->size());
+  for (size_t index = 0; index < inlier_query->size(); ++index) {
+    const unsigned int query_index = inlier_query->at(index);
+    const unsigned int match_index = inlier_match->at(index);
+    source_points.push_back(vlc_frames_[vertex_match].landmarks_.at(match_index));
+    destination_points.push_back(
+        vlc_frames_[vertex_query].landmarks_.at(query_index));
+    descriptor_pairs.emplace_back(query_index, match_index);
+  }
+
+  const size_t min_inlier_count = static_cast<size_t>(
+      std::max(0.0, params_.geometric_verification_min_inlier_count_));
+  gtsam::Similarity3 qcam_T_mcam;
+  std::vector<std::pair<unsigned int, unsigned int>> verified_pairs;
+  size_t method_valid_pair_count = 0;
+  if (use_teaser) {
+    TeaserSim3Params teaser_params;
+    teaser_params.noise_bound_m = params_.teaser_noise_bound_m_;
+    teaser_params.min_scale = params_.teaser_min_scale_;
+    teaser_params.max_scale = params_.teaser_max_scale_;
+    teaser_params.min_inlier_count = min_inlier_count;
+    teaser_params.min_inlier_percentage =
+        params_.geometric_verification_min_inlier_percentage_;
+    const TeaserSim3Estimate estimate = estimateTeaserSim3(
+        source_points, destination_points, descriptor_pairs, teaser_params);
+    method_valid_pair_count = estimate.valid_pair_count;
+    if (!estimate.success) {
+      if (valid_pair_count) {
+        *valid_pair_count = method_valid_pair_count;
+      }
+      return false;
+    }
+    qcam_T_mcam = estimate.destination_T_source;
+    verified_pairs = estimate.descriptor_inlier_pairs;
+  } else {
+    Orbslam3Sim3Params orbslam3_params;
+    orbslam3_params.reprojection_threshold_px =
+        params_.orbslam3_reprojection_threshold_px_;
+    orbslam3_params.average_focal_length_px = params_.avg_focal_length_;
+    orbslam3_params.min_scale = params_.orbslam3_min_scale_;
+    orbslam3_params.max_scale = params_.orbslam3_max_scale_;
+    orbslam3_params.min_inlier_count = min_inlier_count;
+    orbslam3_params.min_inlier_percentage =
+        params_.geometric_verification_min_inlier_percentage_;
+    orbslam3_params.max_ransac_iterations = params_.max_ransac_iterations_;
+    const Orbslam3Sim3Estimate estimate = estimateOrbslam3Sim3(
+        source_points, destination_points, descriptor_pairs, orbslam3_params);
+    method_valid_pair_count = estimate.valid_pair_count;
+    if (!estimate.success) {
+      if (valid_pair_count) {
+        *valid_pair_count = method_valid_pair_count;
+      }
+      return false;
+    }
+    qcam_T_mcam = estimate.destination_T_source;
+    verified_pairs = estimate.descriptor_inlier_pairs;
+  }
+  if (valid_pair_count) {
+    *valid_pair_count = method_valid_pair_count;
+  }
+
+  const gtsam::Similarity3 qbody_T_qcam =
+      similarityFromPose(vlc_frames_[vertex_query].T_base_cam_);
+  const gtsam::Similarity3 mbody_T_mcam =
+      similarityFromPose(vlc_frames_[vertex_match].T_base_cam_);
+  *T_query_match =
+      qbody_T_qcam * qcam_T_mcam * mbody_T_mcam.inverse();
+
+  inlier_query->clear();
+  inlier_match->clear();
+  inlier_query->reserve(verified_pairs.size());
+  inlier_match->reserve(verified_pairs.size());
+  for (const auto& [query_index, match_index] : verified_pairs) {
+    inlier_query->push_back(query_index);
+    inlier_match->push_back(match_index);
+  }
   return true;
 }
 

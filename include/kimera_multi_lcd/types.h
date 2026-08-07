@@ -8,6 +8,7 @@
 
 #include <DBoW2/DBoW2.h>
 #include <gtsam/geometry/Pose3.h>
+#include <gtsam/geometry/Similarity3.h>
 #include <gtsam/inference/Symbol.h>
 #include <pcl/point_types.h>
 
@@ -19,8 +20,11 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <cstdint>
 #include <set>
+#include <string>
 #include <tuple>
 #include <unordered_map>
+
+#include "kimera_multi_lcd/sim3_utils.h"
 
 namespace kimera_multi_lcd {
 
@@ -29,6 +33,10 @@ typedef size_t PoseId;
 typedef std::pair<RobotId, PoseId> RobotPoseId;
 typedef std::set<RobotPoseId> RobotPoseIdSet;
 typedef std::vector<RobotPoseId> RobotPoseIdVector;
+
+inline bool stereoVerificationMethodHasScale(const std::string& method) {
+  return method == "teaser_sim3" || method == "orbslam3_sim3";
+}
 
 using BearingVectors =
     std::vector<gtsam::Vector3, Eigen::aligned_allocator<gtsam::Vector3>>;
@@ -112,13 +120,33 @@ struct PotentialVLCEdge {
 struct VLCEdge {
  public:
   VLCEdge()
-      : stamp_ns_(0), normalized_bow_score_(0), mono_inliers_(0), stereo_inliers_(0) {}
+      : T_src_dst_(gtsam::Similarity3::Identity()),
+        stamp_ns_(0),
+        normalized_bow_score_(0),
+        mono_inliers_(0),
+        stereo_inliers_(0) {}
   VLCEdge(const RobotPoseId& vertex_src,
           const RobotPoseId& vertex_dst,
-          const gtsam::Pose3 T_src_dst)
+          const gtsam::Pose3& T_src_dst)
+      : vertex_src_(vertex_src),
+        vertex_dst_(vertex_dst),
+        T_src_dst_(similarityFromPose(T_src_dst)),
+        stamp_ns_(0),
+        normalized_bow_score_(0),
+        mono_inliers_(0),
+        stereo_inliers_(0) {}
+  VLCEdge(const RobotPoseId& vertex_src,
+          const RobotPoseId& vertex_dst,
+          const gtsam::Similarity3& T_src_dst,
+          bool has_scale,
+          double scale_sigma,
+          std::string method)
       : vertex_src_(vertex_src),
         vertex_dst_(vertex_dst),
         T_src_dst_(T_src_dst),
+        method_(std::move(method)),
+        has_scale_(has_scale),
+        scale_sigma_(scale_sigma),
         stamp_ns_(0),
         normalized_bow_score_(0),
         mono_inliers_(0),
@@ -126,7 +154,13 @@ struct VLCEdge {
 
   RobotPoseId vertex_src_;
   RobotPoseId vertex_dst_;
-  gtsam::Pose3 T_src_dst_;
+  gtsam::Similarity3 T_src_dst_;
+  std::string method_{"opengv_pnp"};
+  bool has_scale_{false};
+  double scale_sigma_{-1.0};
+  size_t valid_pair_count_{0};
+  double verification_time_ms_{-1.0};
+  std::string outcome_{"verified"};
   // Additional optional statistics for logging
   uint64_t stamp_ns_;  // time this loop closure is detected
   double normalized_bow_score_;
@@ -134,7 +168,7 @@ struct VLCEdge {
   int stereo_inliers_;
   bool operator==(const VLCEdge& other) {
     return (vertex_src_ == other.vertex_src_ && vertex_dst_ == other.vertex_dst_ &&
-            T_src_dst_.equals(other.T_src_dst_));
+            T_src_dst_.equals(other.T_src_dst_, 1e-9));
   }
 };  // struct VLCEdge
 
@@ -219,6 +253,16 @@ struct LcdParams {
   double geometric_verification_min_inlier_percentage_;
   double avg_focal_length_ = 900.0;
 
+  // Stereo verification backend. OpenGV remains the default and does not
+  // produce a scale measurement.
+  std::string stereo_verification_method_ = "opengv_pnp";
+  double teaser_noise_bound_m_ = 0.10;
+  double teaser_min_scale_ = 0.5;
+  double teaser_max_scale_ = 2.0;
+  double orbslam3_reprojection_threshold_px_ = 15.0;
+  double orbslam3_min_scale_ = 0.5;
+  double orbslam3_max_scale_ = 2.0;
+
   // lighterglue parameters
   int lcd_lg_num_features_ = 500;  // num features to track
   std::string lcd_lg_model_path_{};
@@ -265,6 +309,14 @@ struct LcdParams {
             geometric_verification_min_inlier_percentage_ ==
                 other.geometric_verification_min_inlier_percentage_ &&
             avg_focal_length_ == other.avg_focal_length_) &&
+           (stereo_verification_method_ == other.stereo_verification_method_) &&
+           (teaser_noise_bound_m_ == other.teaser_noise_bound_m_) &&
+           (teaser_min_scale_ == other.teaser_min_scale_) &&
+           (teaser_max_scale_ == other.teaser_max_scale_) &&
+           (orbslam3_reprojection_threshold_px_ ==
+            other.orbslam3_reprojection_threshold_px_) &&
+           (orbslam3_min_scale_ == other.orbslam3_min_scale_) &&
+           (orbslam3_max_scale_ == other.orbslam3_max_scale_) &&
            (network_input_width_ == other.network_input_width_) &&
            (network_input_height_ == other.network_input_height_);
   }
